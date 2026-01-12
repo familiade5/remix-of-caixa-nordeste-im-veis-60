@@ -344,11 +344,56 @@ function generateMockCaixaData(config: any): CaixaProperty[] {
         ? `${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}/0${Math.floor(Math.random() * 3) + 2}/2025`
         : undefined,
       url: `https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=${registrationId}`,
-      images: [
-        `https://images.unsplash.com/photo-${1564013799919 + i}-ab600027ffc6?w=800&q=80`,
-      ],
+      images: getRandomPropertyImages(propertyType, i),
     });
   }
 
   return mockProperties;
+}
+
+function getRandomPropertyImages(propertyType: string, seed: number): string[] {
+  const houseImages = [
+    'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80',
+    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80',
+    'https://images.unsplash.com/photo-1598228723793-52759bba239c?w=800&q=80',
+    'https://images.unsplash.com/photo-1605276374104-dee2a0ed3cd6?w=800&q=80',
+    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80',
+  ];
+  
+  const apartmentImages = [
+    'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80',
+    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80',
+    'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&q=80',
+    'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80',
+    'https://images.unsplash.com/photo-1560185007-c5ca9d2c014d?w=800&q=80',
+  ];
+  
+  const landImages = [
+    'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&q=80',
+    'https://images.unsplash.com/photo-1500076656116-558758c991c1?w=800&q=80',
+    'https://images.unsplash.com/photo-1628624747186-a941c476b7ef?w=800&q=80',
+  ];
+  
+  const commercialImages = [
+    'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
+    'https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=800&q=80',
+    'https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=800&q=80',
+  ];
+  
+  let images: string[];
+  switch (propertyType) {
+    case 'Casa':
+      images = houseImages;
+      break;
+    case 'Apartamento':
+      images = apartmentImages;
+      break;
+    case 'Terreno':
+      images = landImages;
+      break;
+    default:
+      images = commercialImages;
+  }
+  
+  return [images[seed % images.length]];
 }
