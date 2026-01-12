@@ -2,87 +2,112 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@600;700;800&display=swap');
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 20% 98%;
+    --foreground: 215 25% 15%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 215 25% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 215 25% 15%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 210 85% 40%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 175 60% 45%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 210 15% 95%;
+    --muted-foreground: 215 15% 45%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 38 95% 55%;
+    --accent-foreground: 215 25% 15%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --success: 145 65% 42%;
+    --success-foreground: 0 0% 100%;
 
-    --radius: 0.5rem;
+    --sold: 0 0% 45%;
+    --sold-foreground: 0 0% 100%;
+
+    --border: 210 20% 90%;
+    --input: 210 20% 90%;
+    --ring: 210 85% 40%;
+
+    --radius: 0.75rem;
+
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(210 85% 40%) 0%, hsl(195 80% 45%) 50%, hsl(175 60% 45%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(210 20% 98%) 100%);
+    --gradient-overlay: linear-gradient(180deg, transparent 0%, hsla(215 25% 15% / 0.8) 100%);
+    --gradient-sold: linear-gradient(135deg, hsla(0 0% 0% / 0.7) 0%, hsla(0 0% 0% / 0.5) 100%);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsla(215 25% 15% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsla(215 25% 15% / 0.1), 0 2px 4px -2px hsla(215 25% 15% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsla(215 25% 15% / 0.1), 0 4px 6px -4px hsla(215 25% 15% / 0.1);
+    --shadow-xl: 0 20px 25px -5px hsla(215 25% 15% / 0.1), 0 8px 10px -6px hsla(215 25% 15% / 0.1);
+    --shadow-card: 0 4px 20px -2px hsla(210 85% 40% / 0.08);
+    --shadow-card-hover: 0 12px 30px -4px hsla(210 85% 40% / 0.15);
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 215 25% 10%;
+    --foreground: 210 20% 98%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 215 25% 13%;
+    --card-foreground: 210 20% 98%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 215 25% 13%;
+    --popover-foreground: 210 20% 98%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 200 80% 55%;
+    --primary-foreground: 215 25% 10%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 175 60% 50%;
+    --secondary-foreground: 215 25% 10%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 215 20% 18%;
+    --muted-foreground: 210 15% 65%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 38 95% 55%;
+    --accent-foreground: 215 25% 10%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --success: 145 60% 50%;
+    --success-foreground: 215 25% 10%;
+
+    --sold: 0 0% 55%;
+    --sold-foreground: 0 0% 100%;
+
+    --border: 215 20% 20%;
+    --input: 215 20% 20%;
+    --ring: 200 80% 55%;
+
+    --gradient-hero: linear-gradient(135deg, hsl(210 70% 25%) 0%, hsl(195 60% 30%) 50%, hsl(175 50% 35%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(215 25% 13%) 0%, hsl(215 25% 11%) 100%);
+    --gradient-overlay: linear-gradient(180deg, transparent 0%, hsla(215 25% 5% / 0.9) 100%);
+
+    --shadow-card: 0 4px 20px -2px hsla(0 0% 0% / 0.3);
+    --shadow-card-hover: 0 12px 30px -4px hsla(0 0% 0% / 0.4);
+
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -100,6 +125,61 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .hero-gradient {
+    background: var(--gradient-hero);
+  }
+
+  .card-shadow {
+    box-shadow: var(--shadow-card);
+  }
+
+  .card-shadow-hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  .sold-overlay {
+    background: var(--gradient-sold);
+  }
+
+  .text-gradient {
+    background: var(--gradient-hero);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .filter-chip {
+    @apply px-4 py-2 rounded-full text-sm font-medium transition-all duration-200;
+    @apply bg-card border border-border hover:border-primary hover:bg-primary/5;
+  }
+
+  .filter-chip-active {
+    @apply bg-primary text-primary-foreground border-primary;
+  }
+
+  .property-badge {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold;
+  }
+
+  .property-badge-fgts {
+    @apply bg-success/10 text-success;
+  }
+
+  .property-badge-financing {
+    @apply bg-primary/10 text-primary;
+  }
+
+  .property-badge-discount {
+    @apply bg-accent/10 text-accent;
   }
 }
