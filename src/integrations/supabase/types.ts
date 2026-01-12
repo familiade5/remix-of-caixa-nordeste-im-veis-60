@@ -14,7 +14,269 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      properties: {
+        Row: {
+          accepts_fgts: boolean | null
+          accepts_financing: boolean | null
+          address_city: string
+          address_neighborhood: string
+          address_state: string
+          address_street: string | null
+          address_zipcode: string | null
+          area: number
+          auction_date: string | null
+          bathrooms: number | null
+          bedrooms: number | null
+          caixa_link: string | null
+          created_at: string
+          description: string | null
+          discount: number | null
+          external_id: string | null
+          id: string
+          images: string[] | null
+          modality: string | null
+          original_price: number | null
+          parking_spaces: number | null
+          price: number
+          sold_at: string | null
+          status: string
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          accepts_fgts?: boolean | null
+          accepts_financing?: boolean | null
+          address_city: string
+          address_neighborhood: string
+          address_state: string
+          address_street?: string | null
+          address_zipcode?: string | null
+          area: number
+          auction_date?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          caixa_link?: string | null
+          created_at?: string
+          description?: string | null
+          discount?: number | null
+          external_id?: string | null
+          id?: string
+          images?: string[] | null
+          modality?: string | null
+          original_price?: number | null
+          parking_spaces?: number | null
+          price: number
+          sold_at?: string | null
+          status?: string
+          title: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          accepts_fgts?: boolean | null
+          accepts_financing?: boolean | null
+          address_city?: string
+          address_neighborhood?: string
+          address_state?: string
+          address_street?: string | null
+          address_zipcode?: string | null
+          area?: number
+          auction_date?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          caixa_link?: string | null
+          created_at?: string
+          description?: string | null
+          discount?: number | null
+          external_id?: string | null
+          id?: string
+          images?: string[] | null
+          modality?: string | null
+          original_price?: number | null
+          parking_spaces?: number | null
+          price?: number
+          sold_at?: string | null
+          status?: string
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scraping_config: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          last_run_at: string | null
+          max_price: number | null
+          min_price: number | null
+          modalities: string[] | null
+          name: string
+          property_types: string[] | null
+          states: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          last_run_at?: string | null
+          max_price?: number | null
+          min_price?: number | null
+          modalities?: string[] | null
+          name: string
+          property_types?: string[] | null
+          states?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          last_run_at?: string | null
+          max_price?: number | null
+          min_price?: number | null
+          modalities?: string[] | null
+          name?: string
+          property_types?: string[] | null
+          states?: string[] | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scraping_logs: {
+        Row: {
+          config_id: string | null
+          created_at: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          properties_found: number | null
+          properties_new: number | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          config_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          properties_found?: number | null
+          properties_new?: number | null
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          config_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          properties_found?: number | null
+          properties_new?: number | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scraping_logs_config_id_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "scraping_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staging_properties: {
+        Row: {
+          accepts_fgts: boolean | null
+          accepts_financing: boolean | null
+          address_city: string | null
+          address_neighborhood: string | null
+          address_state: string | null
+          area: number | null
+          auction_date: string | null
+          bathrooms: number | null
+          bedrooms: number | null
+          caixa_link: string | null
+          created_at: string
+          description: string | null
+          discount: number | null
+          external_id: string
+          id: string
+          images: string[] | null
+          modality: string | null
+          original_price: number | null
+          parking_spaces: number | null
+          price: number | null
+          raw_data: Json
+          reviewed_at: string | null
+          scraped_at: string
+          status: string
+          title: string | null
+          type: string | null
+        }
+        Insert: {
+          accepts_fgts?: boolean | null
+          accepts_financing?: boolean | null
+          address_city?: string | null
+          address_neighborhood?: string | null
+          address_state?: string | null
+          area?: number | null
+          auction_date?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          caixa_link?: string | null
+          created_at?: string
+          description?: string | null
+          discount?: number | null
+          external_id: string
+          id?: string
+          images?: string[] | null
+          modality?: string | null
+          original_price?: number | null
+          parking_spaces?: number | null
+          price?: number | null
+          raw_data: Json
+          reviewed_at?: string | null
+          scraped_at?: string
+          status?: string
+          title?: string | null
+          type?: string | null
+        }
+        Update: {
+          accepts_fgts?: boolean | null
+          accepts_financing?: boolean | null
+          address_city?: string | null
+          address_neighborhood?: string | null
+          address_state?: string | null
+          area?: number | null
+          auction_date?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          caixa_link?: string | null
+          created_at?: string
+          description?: string | null
+          discount?: number | null
+          external_id?: string
+          id?: string
+          images?: string[] | null
+          modality?: string | null
+          original_price?: number | null
+          parking_spaces?: number | null
+          price?: number | null
+          raw_data?: Json
+          reviewed_at?: string | null
+          scraped_at?: string
+          status?: string
+          title?: string | null
+          type?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
