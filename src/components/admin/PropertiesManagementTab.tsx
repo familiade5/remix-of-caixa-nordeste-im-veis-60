@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useDbProperties, useUpdatePropertyStatus } from '@/hooks/useProperties';
+import { useDbProperties, useUpdatePropertyStatus, DbProperty } from '@/hooks/useProperties';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -49,7 +49,7 @@ export function PropertiesManagementTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
-    property: typeof properties extends (infer T)[] | undefined ? T : never | null;
+    property: DbProperty | null;
     action: 'sell' | 'unsell';
   }>({
     open: false,
@@ -64,7 +64,7 @@ export function PropertiesManagementTab() {
       p.id.includes(searchQuery)
   ) || [];
 
-  const handleStatusChange = (property: NonNullable<typeof properties>[0], action: 'sell' | 'unsell') => {
+  const handleStatusChange = (property: DbProperty, action: 'sell' | 'unsell') => {
     setConfirmDialog({ open: true, property, action });
   };
 
@@ -220,11 +220,14 @@ export function PropertiesManagementTab() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        {property.images && property.images.length > 0 ? (
+                        {property.images && property.images.length > 0 && property.images[0] ? (
                           <img
                             src={property.images[0]}
                             alt={property.title}
                             className="w-12 h-12 rounded-lg object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80';
+                            }}
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
@@ -305,11 +308,14 @@ export function PropertiesManagementTab() {
           </DialogHeader>
           {confirmDialog.property && (
             <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-              {confirmDialog.property.images && confirmDialog.property.images.length > 0 ? (
+              {confirmDialog.property.images && confirmDialog.property.images.length > 0 && confirmDialog.property.images[0] ? (
                 <img
                   src={confirmDialog.property.images[0]}
                   alt={confirmDialog.property.title}
                   className="w-16 h-16 rounded-lg object-cover"
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80';
+                  }}
                 />
               ) : (
                 <div className="w-16 h-16 rounded-lg bg-background flex items-center justify-center">
