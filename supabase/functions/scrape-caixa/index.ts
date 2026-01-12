@@ -5,49 +5,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Mapeamento de códigos de estado para sigla
-const stateCodeMap: Record<string, string> = {
-  'AL': 'AL', 'BA': 'BA', 'CE': 'CE', 'MA': 'MA',
-  'PB': 'PB', 'PE': 'PE', 'PI': 'PI', 'RN': 'RN', 'SE': 'SE'
+// Estados do Nordeste
+const NORTHEAST_STATES = ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'];
+
+// Mapeamento de tipo de imóvel
+const PROPERTY_TYPE_MAP: Record<string, string> = {
+  'casa': 'casa',
+  'apartamento': 'apartamento',
+  'apto': 'apartamento',
+  'terreno': 'terreno',
+  'lote': 'terreno',
+  'sala': 'comercial',
+  'comercial': 'comercial',
+  'loja': 'comercial',
+  'galpão': 'comercial',
+  'galpao': 'comercial',
 };
 
-// Mapeamento de modalidades da Caixa
-const modalityMap: Record<string, string> = {
-  'Venda Direta Online': '35',
-  'Leilão SFI - Edital Único': '5',
-  'Licitação Aberta': '32',
-};
-
-// Mapeamento de tipos de imóvel
-const propertyTypeMap: Record<string, string> = {
-  'casa': 'Casa',
-  'apartamento': 'Apartamento',
-  'terreno': 'Outros',
-  'comercial': 'Outros',
-};
-
-interface CaixaProperty {
-  realtyRegistration: string;
-  propertyType: string;
-  rooms: string;
-  garage: string;
-  propertyNumber: string;
-  registrationNumber: string;
-  district: string;
-  office: string;
-  evaluationValue: string;
-  minimumSaleValue: string;
-  minimumSaleValue1?: string;
-  discount: string;
-  privateArea: string;
-  landArea?: string;
+interface CaixaPropertyData {
+  id: string;
+  title: string;
+  type: string;
+  price: number;
+  originalPrice: number;
+  discount: number;
+  city: string;
+  state: string;
+  neighborhood: string;
   address: string;
-  notice?: string;
-  paymentMethods: string[];
-  firstAuctionDate?: string;
-  secondAuctionDate?: string;
-  url: string;
-  images?: string[];
+  bedrooms: number | null;
+  bathrooms: number | null;
+  area: number;
+  parkingSpaces: number | null;
+  acceptsFgts: boolean;
+  acceptsFinancing: boolean;
+  modality: string;
+  caixaLink: string;
+  images: string[];
 }
 
 Deno.serve(async (req) => {
@@ -58,7 +52,16 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    if (!firecrawlApiKey) {
+      console.error('FIRECRAWL_API_KEY não configurada');
+      return new Response(
+        JSON.stringify({ success: false, error: 'Firecrawl não configurado' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const { configId } = await req.json();
 
@@ -93,43 +96,101 @@ Deno.serve(async (req) => {
       console.error('Log creation error:', logError);
     }
 
-    console.log('Iniciando scraping com config:', config.name);
+    console.log('Iniciando scraping real da Caixa - Venda Direta, Nordeste');
 
-    // Simular dados da Caixa (em produção, isso viria de uma API real ou web scraping)
-    // A Caixa não tem uma API pública oficial, então usamos dados simulados
-    // que seguem o formato real dos imóveis da Caixa
-    const mockCaixaProperties: CaixaProperty[] = generateMockCaixaData(config);
+    const allProperties: CaixaPropertyData[] = [];
+    const states = config.states || NORTHEAST_STATES;
 
-    let propertiesFound = 0;
+    // Buscar imóveis para cada estado do Nordeste
+    for (const state of states) {
+      console.log(`Buscando imóveis em ${state}...`);
+      
+      try {
+        // URL da Caixa para Venda Direta Online (código 35) no estado
+        const searchUrl = `https://venda-imoveis.caixa.gov.br/sistema/busca-imovel.asp?sltTipoBusca=imoveis&sltEstado=${state}&hdnOrigem=index&hdnNumTipoVenda=35`;
+        
+        // Usar Firecrawl para buscar a página de resultados
+        const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${firecrawlApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url: searchUrl,
+            formats: ['html', 'markdown'],
+            waitFor: 3000,
+            onlyMainContent: false,
+          }),
+        });
+
+        if (!scrapeResponse.ok) {
+          console.error(`Erro ao buscar ${state}:`, await scrapeResponse.text());
+          continue;
+        }
+
+        const scrapeData = await scrapeResponse.json();
+        const html = scrapeData.data?.html || scrapeData.html || '';
+        const markdown = scrapeData.data?.markdown || scrapeData.markdown || '';
+
+        // Parsear os imóveis da resposta
+        const properties = parsePropertiesFromHtml(html, markdown, state);
+        console.log(`Encontrados ${properties.length} imóveis em ${state}`);
+        
+        allProperties.push(...properties);
+
+        // Pequeno delay entre requisições para não sobrecarregar
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+      } catch (err) {
+        console.error(`Erro ao processar estado ${state}:`, err);
+      }
+    }
+
+    console.log(`Total de imóveis encontrados: ${allProperties.length}`);
+
+    let propertiesFound = allProperties.length;
     let propertiesNew = 0;
 
-    for (const property of mockCaixaProperties) {
-      propertiesFound++;
-
-      // Verificar se já existe no staging ou properties
+    // Inserir imóveis no staging
+    for (const property of allProperties) {
+      // Verificar se já existe
       const { data: existingStaging } = await supabase
         .from('staging_properties')
         .select('id')
-        .eq('external_id', property.realtyRegistration)
+        .eq('external_id', property.id)
         .maybeSingle();
 
       const { data: existingProperty } = await supabase
         .from('properties')
         .select('id')
-        .eq('external_id', property.realtyRegistration)
+        .eq('external_id', property.id)
         .maybeSingle();
 
       if (!existingStaging && !existingProperty) {
-        // Processar e inserir no staging
-        const parsedProperty = parseProperty(property);
-
         const { error: insertError } = await supabase
           .from('staging_properties')
           .insert({
-            external_id: property.realtyRegistration,
+            external_id: property.id,
             raw_data: property,
-            ...parsedProperty,
-            caixa_link: property.url,
+            title: property.title,
+            type: property.type,
+            price: property.price,
+            original_price: property.originalPrice,
+            discount: property.discount,
+            address_neighborhood: property.neighborhood,
+            address_city: property.city,
+            address_state: property.state,
+            bedrooms: property.bedrooms,
+            bathrooms: property.bathrooms,
+            area: property.area,
+            parking_spaces: property.parkingSpaces,
+            images: property.images,
+            description: `Imóvel disponível pela Caixa Econômica Federal - Venda Direta. ${property.address}`,
+            accepts_fgts: property.acceptsFgts,
+            accepts_financing: property.acceptsFinancing,
+            modality: property.modality,
+            caixa_link: property.caixaLink,
             status: 'pending',
           });
 
@@ -180,220 +241,176 @@ Deno.serve(async (req) => {
   }
 });
 
-function parseProperty(caixaProperty: CaixaProperty) {
-  // Extrair cidade e estado do distrito
-  const districtParts = caixaProperty.district.split('-');
-  const city = districtParts[0]?.trim() || 'Não informado';
-  const state = districtParts[1]?.trim() || 'CE';
-
-  // Mapear tipo de imóvel
-  const typeRaw = caixaProperty.propertyType?.toLowerCase() || '';
-  let type = 'casa';
-  if (typeRaw.includes('apartamento') || typeRaw.includes('apto')) {
-    type = 'apartamento';
-  } else if (typeRaw.includes('terreno') || typeRaw.includes('lote')) {
-    type = 'terreno';
-  } else if (typeRaw.includes('comercial') || typeRaw.includes('sala') || typeRaw.includes('loja')) {
-    type = 'comercial';
-  }
-
-  // Parse valores
-  const parseMoneyValue = (value: string): number => {
-    if (!value) return 0;
-    return parseFloat(value.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-  };
-
-  const parseAreaValue = (value: string): number => {
-    if (!value) return 0;
-    return parseFloat(value.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-  };
-
-  const price = parseMoneyValue(caixaProperty.minimumSaleValue);
-  const originalPrice = parseMoneyValue(caixaProperty.evaluationValue);
-  const discount = parseFloat(caixaProperty.discount?.replace(',', '.') || '0');
-  const area = parseAreaValue(caixaProperty.privateArea);
-
-  // Extrair bairro do endereço
-  const addressParts = caixaProperty.address?.split(',') || [];
-  const neighborhood = addressParts.length > 2 
-    ? addressParts[addressParts.length - 2]?.trim()?.replace(/- CEP:.*/, '')?.trim() 
-    : 'Centro';
-
-  // Verificar FGTS e financiamento
-  const paymentMethods = caixaProperty.paymentMethods || [];
-  const acceptsFgts = paymentMethods.some(m => m.toLowerCase().includes('fgts'));
-  const acceptsFinancing = paymentMethods.some(m => m.toLowerCase().includes('financiamento'));
-
-  // Determinar modalidade
-  let modality = 'Venda Direta';
-  if (caixaProperty.notice?.toLowerCase().includes('leilão')) {
-    modality = 'Leilão';
-  } else if (caixaProperty.notice?.toLowerCase().includes('licitação')) {
-    modality = 'Licitação';
-  }
-
-  // Parse data de leilão
-  let auctionDate = null;
-  if (caixaProperty.firstAuctionDate) {
-    const parts = caixaProperty.firstAuctionDate.split('/');
-    if (parts.length === 3) {
-      auctionDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+function parsePropertiesFromHtml(html: string, markdown: string, state: string): CaixaPropertyData[] {
+  const properties: CaixaPropertyData[] = [];
+  
+  try {
+    // Regex para encontrar links de imóveis individuais
+    const propertyLinkRegex = /detalhe-imovel\.asp\?[^"'\s]*(hdnimovel|hdnImovel)=(\d+)/gi;
+    const matches = html.matchAll(propertyLinkRegex);
+    const foundIds = new Set<string>();
+    
+    for (const match of matches) {
+      const imovelId = match[2];
+      if (!foundIds.has(imovelId)) {
+        foundIds.add(imovelId);
+      }
     }
-  }
 
-  // Gerar título
-  const bedrooms = parseInt(caixaProperty.rooms) || 0;
-  const title = bedrooms > 0
-    ? `${caixaProperty.propertyType || 'Imóvel'} ${bedrooms} Quarto${bedrooms > 1 ? 's' : ''} - ${neighborhood}`
-    : `${caixaProperty.propertyType || 'Imóvel'} - ${neighborhood}`;
+    // Para cada imóvel encontrado, extrair informações do HTML
+    // Procurar por padrões de cards de imóveis no HTML da Caixa
+    const cardPatterns = [
+      // Padrão 1: Div com informações do imóvel
+      /<div[^>]*class="[^"]*card[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+      // Padrão 2: Article com imóvel
+      /<article[^>]*>[\s\S]*?<\/article>/gi,
+      // Padrão 3: Lista de imóveis
+      /<li[^>]*class="[^"]*imovel[^"]*"[^>]*>[\s\S]*?<\/li>/gi,
+    ];
 
-  return {
-    title,
-    type,
-    price,
-    original_price: originalPrice,
-    discount,
-    address_neighborhood: neighborhood,
-    address_city: city,
-    address_state: state in stateCodeMap ? state : 'CE',
-    bedrooms: bedrooms || null,
-    bathrooms: null,
-    area,
-    parking_spaces: parseInt(caixaProperty.garage) || null,
-    images: caixaProperty.images || [],
-    description: `Imóvel disponível pela Caixa Econômica Federal. ${caixaProperty.address}`,
-    accepts_fgts: acceptsFgts,
-    accepts_financing: acceptsFinancing,
-    modality,
-    auction_date: auctionDate,
-  };
-}
+    // Extrair informações do markdown também
+    const lines = markdown.split('\n');
+    let currentProperty: Partial<CaixaPropertyData> | null = null;
 
-function generateMockCaixaData(config: any): CaixaProperty[] {
-  // Em produção, isso seria substituído por scraping real
-  // Por enquanto, geramos dados mock realistas baseados na estrutura da Caixa
-  
-  const mockProperties: CaixaProperty[] = [];
-  const neighborhoods = [
-    'Centro', 'Boa Vista', 'Aldeota', 'Meireles', 'Pituba', 'Barra',
-    'Ponta Verde', 'Pajuçara', 'Tambaú', 'Manaíra', 'Cabo Branco',
-    'Parnamirim', 'Casa Forte', 'Graças', 'Tirol', 'Petrópolis'
-  ];
-  
-  const states = config.states || ['CE', 'PE', 'BA', 'AL', 'PB', 'RN', 'SE', 'PI', 'MA'];
-  const cities: Record<string, string[]> = {
-    'CE': ['FORTALEZA', 'MARACANAÚ', 'CAUCAIA', 'JUAZEIRO DO NORTE'],
-    'PE': ['RECIFE', 'OLINDA', 'JABOATÃO DOS GUARARAPES', 'CARUARU'],
-    'BA': ['SALVADOR', 'FEIRA DE SANTANA', 'VITÓRIA DA CONQUISTA', 'CAMAÇARI'],
-    'AL': ['MACEIÓ', 'ARAPIRACA', 'RIO LARGO'],
-    'PB': ['JOÃO PESSOA', 'CAMPINA GRANDE', 'PATOS'],
-    'RN': ['NATAL', 'MOSSORÓ', 'PARNAMIRIM'],
-    'SE': ['ARACAJU', 'NOSSA SENHORA DO SOCORRO', 'LAGARTO'],
-    'PI': ['TERESINA', 'PARNAÍBA', 'PICOS'],
-    'MA': ['SÃO LUÍS', 'IMPERATRIZ', 'CAXIAS'],
-  };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Detectar início de novo imóvel
+      if (line.includes('R$') && line.includes(',')) {
+        // Extrair valor
+        const priceMatch = line.match(/R\$\s*([\d.,]+)/);
+        if (priceMatch) {
+          const price = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+          
+          if (currentProperty && currentProperty.id) {
+            properties.push(currentProperty as CaixaPropertyData);
+          }
+          
+          currentProperty = {
+            id: `caixa_${Date.now()}_${properties.length}`,
+            price: price,
+            originalPrice: price,
+            discount: 0,
+            state: state,
+            city: '',
+            neighborhood: '',
+            address: '',
+            title: '',
+            type: 'casa',
+            bedrooms: null,
+            bathrooms: null,
+            area: 0,
+            parkingSpaces: null,
+            acceptsFgts: false,
+            acceptsFinancing: false,
+            modality: 'Venda Direta',
+            caixaLink: `https://venda-imoveis.caixa.gov.br/sistema/busca-imovel.asp?sltEstado=${state}`,
+            images: [],
+          };
+        }
+      }
 
-  const propertyTypes = ['Casa', 'Apartamento', 'Terreno', 'Sala Comercial'];
-  
-  // Gerar 5-10 imóveis por execução
-  const count = Math.floor(Math.random() * 6) + 5;
-  
-  for (let i = 0; i < count; i++) {
-    const state = states[Math.floor(Math.random() * states.length)];
-    const cityList = cities[state] || ['CAPITAL'];
-    const city = cityList[Math.floor(Math.random() * cityList.length)];
-    const neighborhood = neighborhoods[Math.floor(Math.random() * neighborhoods.length)];
-    const propertyType = propertyTypes[Math.floor(Math.random() * propertyTypes.length)];
-    
-    const baseValue = Math.floor(Math.random() * 400000) + 80000;
-    const discountPercent = Math.floor(Math.random() * 30) + 10;
-    const saleValue = Math.floor(baseValue * (1 - discountPercent / 100));
-    
-    const rooms = propertyType === 'Terreno' || propertyType === 'Sala Comercial' 
-      ? '0' 
-      : String(Math.floor(Math.random() * 3) + 1);
-    const garage = propertyType === 'Terreno' ? '0' : String(Math.floor(Math.random() * 3));
-    const area = propertyType === 'Terreno' 
-      ? Math.floor(Math.random() * 400) + 200
-      : Math.floor(Math.random() * 100) + 50;
+      // Extrair tipo de imóvel
+      const lowerLine = line.toLowerCase();
+      for (const [keyword, type] of Object.entries(PROPERTY_TYPE_MAP)) {
+        if (lowerLine.includes(keyword)) {
+          if (currentProperty) {
+            currentProperty.type = type;
+          }
+          break;
+        }
+      }
 
-    const registrationId = `${Date.now()}${Math.floor(Math.random() * 10000)}`;
-    
-    mockProperties.push({
-      realtyRegistration: registrationId,
-      propertyType,
-      rooms,
-      garage,
-      propertyNumber: `8555${Math.floor(Math.random() * 100000000)}`,
-      registrationNumber: String(Math.floor(Math.random() * 100000)),
-      district: `${city}-${state}`,
-      office: String(Math.floor(Math.random() * 10) + 1).padStart(2, '0'),
-      evaluationValue: baseValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-      minimumSaleValue: saleValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-      minimumSaleValue1: baseValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-      discount: discountPercent.toFixed(2).replace('.', ','),
-      privateArea: `${area},00m2`,
-      address: `RUA ${neighborhood.toUpperCase()}, N. ${Math.floor(Math.random() * 1000)}, ${neighborhood} - CEP: ${String(Math.floor(Math.random() * 90000) + 10000)}-${String(Math.floor(Math.random() * 900) + 100)}, ${city} - ${state}`,
-      notice: Math.random() > 0.5 ? 'Venda Direta Online' : 'Leilão SFI - Edital Único',
-      paymentMethods: [
-        'Recursos próprios.',
-        Math.random() > 0.3 ? 'Permite utilização de FGTS. Consulte condições e enquadramento.' : '',
-        Math.random() > 0.4 ? 'Permite financiamento - somente SBPE. Consulte condições antes de efetuar a proposta.' : '',
-      ].filter(Boolean),
-      firstAuctionDate: Math.random() > 0.5 
-        ? `${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}/0${Math.floor(Math.random() * 3) + 2}/2025`
-        : undefined,
-      url: `https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=${registrationId}`,
-      images: getRandomPropertyImages(propertyType, i),
+      // Extrair quartos
+      const bedroomMatch = line.match(/(\d+)\s*(quartos?|dormit[oó]rios?)/i);
+      if (bedroomMatch && currentProperty) {
+        currentProperty.bedrooms = parseInt(bedroomMatch[1]);
+      }
+
+      // Extrair área
+      const areaMatch = line.match(/([\d.,]+)\s*m[²2]/i);
+      if (areaMatch && currentProperty) {
+        currentProperty.area = parseFloat(areaMatch[1].replace(',', '.'));
+      }
+
+      // Extrair cidade
+      const cityStateMatch = line.match(/([A-Za-zÀ-ÿ\s]+)\s*[-–]\s*([A-Z]{2})/);
+      if (cityStateMatch && currentProperty) {
+        currentProperty.city = cityStateMatch[1].trim();
+        if (cityStateMatch[2] === state) {
+          currentProperty.state = cityStateMatch[2];
+        }
+      }
+
+      // Detectar FGTS
+      if (lowerLine.includes('fgts')) {
+        if (currentProperty) currentProperty.acceptsFgts = true;
+      }
+
+      // Detectar Financiamento
+      if (lowerLine.includes('financ')) {
+        if (currentProperty) currentProperty.acceptsFinancing = true;
+      }
+
+      // Extrair desconto
+      const discountMatch = line.match(/([\d.,]+)\s*%\s*(desc|off|abaixo)/i);
+      if (discountMatch && currentProperty) {
+        currentProperty.discount = parseFloat(discountMatch[1].replace(',', '.'));
+      }
+    }
+
+    // Adicionar último imóvel
+    if (currentProperty && currentProperty.id) {
+      properties.push(currentProperty as CaixaPropertyData);
+    }
+
+    // Se não encontrou pelo markdown, tentar criar propriedades a partir dos IDs
+    if (properties.length === 0 && foundIds.size > 0) {
+      for (const id of foundIds) {
+        properties.push({
+          id: id,
+          title: `Imóvel Caixa - ${state}`,
+          type: 'casa',
+          price: 0,
+          originalPrice: 0,
+          discount: 0,
+          city: state,
+          state: state,
+          neighborhood: 'Centro',
+          address: `${state} - Brasil`,
+          bedrooms: null,
+          bathrooms: null,
+          area: 0,
+          parkingSpaces: null,
+          acceptsFgts: true,
+          acceptsFinancing: true,
+          modality: 'Venda Direta',
+          caixaLink: `https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=${id}`,
+          images: [],
+        });
+      }
+    }
+
+    // Gerar títulos para propriedades
+    properties.forEach(prop => {
+      if (!prop.title || prop.title.includes('Imóvel Caixa')) {
+        const typeLabel = prop.type === 'casa' ? 'Casa' :
+                         prop.type === 'apartamento' ? 'Apartamento' :
+                         prop.type === 'terreno' ? 'Terreno' :
+                         prop.type === 'comercial' ? 'Comercial' : 'Imóvel';
+        
+        const bedroomInfo = prop.bedrooms ? `${prop.bedrooms} Quarto${prop.bedrooms > 1 ? 's' : ''}` : '';
+        const location = prop.neighborhood || prop.city || state;
+        
+        prop.title = bedroomInfo 
+          ? `${typeLabel} ${bedroomInfo} - ${location}`
+          : `${typeLabel} - ${location}`;
+      }
     });
+
+  } catch (err) {
+    console.error('Erro ao parsear HTML:', err);
   }
 
-  return mockProperties;
-}
-
-function getRandomPropertyImages(propertyType: string, seed: number): string[] {
-  const houseImages = [
-    'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80',
-    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80',
-    'https://images.unsplash.com/photo-1598228723793-52759bba239c?w=800&q=80',
-    'https://images.unsplash.com/photo-1605276374104-dee2a0ed3cd6?w=800&q=80',
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80',
-  ];
-  
-  const apartmentImages = [
-    'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80',
-    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80',
-    'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&q=80',
-    'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80',
-    'https://images.unsplash.com/photo-1560185007-c5ca9d2c014d?w=800&q=80',
-  ];
-  
-  const landImages = [
-    'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&q=80',
-    'https://images.unsplash.com/photo-1500076656116-558758c991c1?w=800&q=80',
-    'https://images.unsplash.com/photo-1628624747186-a941c476b7ef?w=800&q=80',
-  ];
-  
-  const commercialImages = [
-    'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
-    'https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=800&q=80',
-    'https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=800&q=80',
-  ];
-  
-  let images: string[];
-  switch (propertyType) {
-    case 'Casa':
-      images = houseImages;
-      break;
-    case 'Apartamento':
-      images = apartmentImages;
-      break;
-    case 'Terreno':
-      images = landImages;
-      break;
-    default:
-      images = commercialImages;
-  }
-  
-  return [images[seed % images.length]];
+  return properties;
 }
