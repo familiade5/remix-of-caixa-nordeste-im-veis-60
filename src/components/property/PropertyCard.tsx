@@ -8,8 +8,38 @@ interface PropertyCardProps {
   index?: number;
 }
 
+// Lista de URLs conhecidas que são placeholders/logos do site original
+const PLACEHOLDER_PATTERNS = [
+  'leilaoimovel.com.br/imagens/logo',
+  'leilaoimovel.com.br/images/logo',
+  'sem-foto',
+  'no-image',
+  'placeholder',
+  'default-property',
+  '/logo.',
+];
+
+// Nossa imagem de fallback (logo ou imagem padrão)
+const FALLBACK_IMAGE = '/placeholder.svg';
+
+function isPlaceholderImage(imageUrl: string): boolean {
+  if (!imageUrl) return true;
+  const lowerUrl = imageUrl.toLowerCase();
+  return PLACEHOLDER_PATTERNS.some(pattern => lowerUrl.includes(pattern));
+}
+
+function getPropertyImage(images: string[] | undefined): string {
+  if (!images || images.length === 0) return FALLBACK_IMAGE;
+  
+  // Procurar a primeira imagem que não seja placeholder
+  const validImage = images.find(img => !isPlaceholderImage(img));
+  
+  return validImage || FALLBACK_IMAGE;
+}
+
 export function PropertyCard({ property, index = 0 }: PropertyCardProps) {
   const isSold = property.status === 'sold';
+  const propertyImage = getPropertyImage(property.images);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -39,13 +69,17 @@ export function PropertyCard({ property, index = 0 }: PropertyCardProps) {
         }`}
       >
         {/* Image Container */}
-        <div className="relative aspect-[4/3] overflow-hidden">
+        <div className="relative aspect-[4/3] overflow-hidden bg-muted">
           <img
-            src={property.images[0]}
+            src={propertyImage}
             alt={property.title}
             className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
               isSold ? 'grayscale' : ''
             }`}
+            onError={(e) => {
+              // Se a imagem falhar ao carregar, usar fallback
+              (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+            }}
           />
           
           {/* Overlay Gradient */}
