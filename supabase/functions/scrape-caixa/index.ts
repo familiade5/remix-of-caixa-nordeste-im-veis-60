@@ -135,63 +135,103 @@ Deno.serve(async (req) => {
     
     console.log(`📍 Buscando em ${locationsToScrape.length} cidades dos estados: ${configStates.join(', ')}`);
     
-    // Buscar imóveis para cada cidade
+    // Buscar imóveis para cada cidade COM PAGINAÇÃO
     for (const location of locationsToScrape) {
       console.log(`\n🔍 Buscando imóveis em ${location.cityName}/${location.uf}...`);
       
-      try {
-        // URL do leilaoimovel.com.br (busca TODOS os imóveis, sem filtro de modalidade)
-        const listUrl = `https://www.leilaoimovel.com.br/caixa/imoveis-caixa-em-${location.city}-${location.uf.toLowerCase()}`;
-        
-        console.log(`   URL: ${listUrl}`);
-        
-        // Usar Firecrawl para buscar a página de resultados
-        const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${firecrawlApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            url: listUrl,
-            formats: ['html'],
-            waitFor: 3000,
-            onlyMainContent: false,
-          }),
-        });
-
-        if (!scrapeResponse.ok) {
-          console.error(`   ❌ Erro ao buscar ${location.cityName}:`, await scrapeResponse.text());
-          continue;
-        }
-
-        const scrapeData = await scrapeResponse.json();
-        const html = scrapeData.data?.html || scrapeData.html || '';
-
-        // Verificar se retornou erro
-        if (html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado')) {
-          console.log(`   ⚠️ Página não disponível para ${location.cityName}`);
-          continue;
-        }
-
-        // Extrair links e dados básicos direto do HTML da listagem
-        const propertiesFromList = extractPropertiesFromList(html, location.uf, location.cityName);
-        console.log(`   📦 Encontrados ${propertiesFromList.length} imóveis`);
-        
-        // Adicionar apenas os que não foram vistos antes
-        for (const prop of propertiesFromList) {
-          if (!seenPropertyIds.has(prop.id)) {
-            seenPropertyIds.add(prop.id);
-            allProperties.push(prop);
+      let currentPage = 1;
+      const maxPages = 20; // Limite de segurança (20 páginas x ~20 imóveis = 400 por cidade)
+      let hasMorePages = true;
+      let cityPropertiesCount = 0;
+      
+      while (hasMorePages && currentPage <= maxPages) {
+        try {
+          // URL do leilaoimovel.com.br COM PAGINAÇÃO
+          const listUrl = currentPage === 1 
+            ? `https://www.leilaoimovel.com.br/caixa/imoveis-caixa-em-${location.city}-${location.uf.toLowerCase()}`
+            : `https://www.leilaoimovel.com.br/caixa/imoveis-caixa-em-${location.city}-${location.uf.toLowerCase()}?pag=${currentPage}`;
+          
+          if (currentPage === 1) {
+            console.log(`   URL: ${listUrl}`);
           }
+          
+          // Usar Firecrawl para buscar a página de resultados
+          const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${firecrawlApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              url: listUrl,
+              formats: ['html'],
+              waitFor: 3000,
+              onlyMainContent: false,
+            }),
+          });
+
+          if (!scrapeResponse.ok) {
+            console.error(`   ❌ Erro ao buscar ${location.cityName} (pág ${currentPage}):`, await scrapeResponse.text());
+            hasMorePages = false;
+            continue;
+          }
+
+          const scrapeData = await scrapeResponse.json();
+          const html = scrapeData.data?.html || scrapeData.html || '';
+
+          // Verificar se retornou erro ou página vazia
+          if (html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado')) {
+            console.log(`   ⚠️ Página não disponível para ${location.cityName}`);
+            hasMorePages = false;
+            continue;
+          }
+
+          // Extrair links e dados básicos direto do HTML da listagem
+          const propertiesFromList = extractPropertiesFromList(html, location.uf, location.cityName);
+          
+          if (propertiesFromList.length === 0) {
+            // Não há mais imóveis nesta página
+            hasMorePages = false;
+            continue;
+          }
+          
+          // Adicionar apenas os que não foram vistos antes
+          let newPropertiesThisPage = 0;
+          for (const prop of propertiesFromList) {
+            if (!seenPropertyIds.has(prop.id)) {
+              seenPropertyIds.add(prop.id);
+              allProperties.push(prop);
+              newPropertiesThisPage++;
+              cityPropertiesCount++;
+            }
+          }
+          
+          console.log(`   📦 Página ${currentPage}: ${propertiesFromList.length} imóveis (${newPropertiesThisPage} novos)`);
+          
+          // Verificar se há próxima página
+          // O site usa ?pag=X para paginação
+          const hasNextPageLink = html.includes(`pag=${currentPage + 1}`) || 
+                                  html.includes(`page=${currentPage + 1}`) ||
+                                  (html.includes('paginacao') && propertiesFromList.length >= 18);
+          
+          if (!hasNextPageLink || propertiesFromList.length < 10) {
+            hasMorePages = false;
+          } else {
+            currentPage++;
+            // Delay entre páginas
+            await new Promise(resolve => setTimeout(resolve, 800));
+          }
+
+        } catch (err) {
+          console.error(`   ❌ Erro ao processar ${location.cityName} (pág ${currentPage}):`, err);
+          hasMorePages = false;
         }
-
-        // Delay entre cidades
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-      } catch (err) {
-        console.error(`   ❌ Erro ao processar ${location.cityName}:`, err);
       }
+      
+      console.log(`   ✅ Total em ${location.cityName}: ${cityPropertiesCount} imóveis`);
+      
+      // Delay entre cidades
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     console.log(`\n📊 Total de imóveis únicos coletados: ${allProperties.length}`);
