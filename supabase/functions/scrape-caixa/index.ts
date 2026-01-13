@@ -5,17 +5,46 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Estados do Nordeste com seus códigos IBGE
-const NORTHEAST_STATES = [
-  { uf: 'AL', code: '27', name: 'Alagoas' },
-  { uf: 'BA', code: '29', name: 'Bahia' },
-  { uf: 'CE', code: '23', name: 'Ceará' },
-  { uf: 'MA', code: '21', name: 'Maranhão' },
-  { uf: 'PB', code: '25', name: 'Paraíba' },
-  { uf: 'PE', code: '26', name: 'Pernambuco' },
-  { uf: 'PI', code: '22', name: 'Piauí' },
-  { uf: 'RN', code: '24', name: 'Rio Grande do Norte' },
-  { uf: 'SE', code: '28', name: 'Sergipe' },
+// Estados do Nordeste com suas principais cidades (maior volume de imóveis)
+const NORTHEAST_LOCATIONS = [
+  // Ceará
+  { uf: 'CE', city: 'fortaleza', cityName: 'Fortaleza' },
+  { uf: 'CE', city: 'caucaia', cityName: 'Caucaia' },
+  { uf: 'CE', city: 'maracanau', cityName: 'Maracanaú' },
+  { uf: 'CE', city: 'juazeiro-do-norte', cityName: 'Juazeiro do Norte' },
+  // Bahia
+  { uf: 'BA', city: 'salvador', cityName: 'Salvador' },
+  { uf: 'BA', city: 'feira-de-santana', cityName: 'Feira de Santana' },
+  { uf: 'BA', city: 'vitoria-da-conquista', cityName: 'Vitória da Conquista' },
+  { uf: 'BA', city: 'camacari', cityName: 'Camaçari' },
+  { uf: 'BA', city: 'lauro-de-freitas', cityName: 'Lauro de Freitas' },
+  // Pernambuco
+  { uf: 'PE', city: 'recife', cityName: 'Recife' },
+  { uf: 'PE', city: 'jaboatao-dos-guararapes', cityName: 'Jaboatão dos Guararapes' },
+  { uf: 'PE', city: 'olinda', cityName: 'Olinda' },
+  { uf: 'PE', city: 'caruaru', cityName: 'Caruaru' },
+  { uf: 'PE', city: 'paulista', cityName: 'Paulista' },
+  // Maranhão
+  { uf: 'MA', city: 'sao-luis', cityName: 'São Luís' },
+  { uf: 'MA', city: 'imperatriz', cityName: 'Imperatriz' },
+  { uf: 'MA', city: 'caxias', cityName: 'Caxias' },
+  // Paraíba
+  { uf: 'PB', city: 'joao-pessoa', cityName: 'João Pessoa' },
+  { uf: 'PB', city: 'campina-grande', cityName: 'Campina Grande' },
+  { uf: 'PB', city: 'santa-rita', cityName: 'Santa Rita' },
+  // Rio Grande do Norte
+  { uf: 'RN', city: 'natal', cityName: 'Natal' },
+  { uf: 'RN', city: 'mossoro', cityName: 'Mossoró' },
+  { uf: 'RN', city: 'parnamirim', cityName: 'Parnamirim' },
+  // Alagoas
+  { uf: 'AL', city: 'maceio', cityName: 'Maceió' },
+  { uf: 'AL', city: 'arapiraca', cityName: 'Arapiraca' },
+  // Piauí
+  { uf: 'PI', city: 'teresina', cityName: 'Teresina' },
+  { uf: 'PI', city: 'parnaiba', cityName: 'Parnaíba' },
+  // Sergipe
+  { uf: 'SE', city: 'aracaju', cityName: 'Aracaju' },
+  { uf: 'SE', city: 'nossa-senhora-do-socorro', cityName: 'Nossa Senhora do Socorro' },
 ];
 
 interface CaixaPropertyData {
@@ -95,24 +124,26 @@ Deno.serve(async (req) => {
       console.error('Log creation error:', logError);
     }
 
-    console.log('Iniciando scraping - leilaoimovel.com.br (Imóveis Caixa Nordeste)');
+    console.log('🚀 Iniciando scraping - leilaoimovel.com.br (Todos os imóveis Caixa Nordeste)');
 
     const allProperties: CaixaPropertyData[] = [];
+    const seenPropertyIds = new Set<string>();
     
     // Filtrar estados do config
     const configStates = config.states?.map((s: string) => s.toUpperCase()) || ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'];
-    const statesToScrape = NORTHEAST_STATES.filter(s => configStates.includes(s.uf));
+    const locationsToScrape = NORTHEAST_LOCATIONS.filter(loc => configStates.includes(loc.uf));
     
-    // Buscar imóveis para cada estado
-    for (const stateInfo of statesToScrape) {
-      console.log(`\n🔍 Buscando imóveis em ${stateInfo.name}...`);
+    console.log(`📍 Buscando em ${locationsToScrape.length} cidades dos estados: ${configStates.join(', ')}`);
+    
+    // Buscar imóveis para cada cidade
+    for (const location of locationsToScrape) {
+      console.log(`\n🔍 Buscando imóveis em ${location.cityName}/${location.uf}...`);
       
       try {
-        // URL do leilaoimovel.com.br para Venda Direta Caixa no estado
-        // venda=7,8 = Venda Direta Online e Licitação Aberta
-        const listUrl = `https://www.leilaoimovel.com.br/caixa/imoveis-caixa-${stateInfo.uf.toLowerCase()}?venda=7,8&estado=${stateInfo.code}`;
+        // URL do leilaoimovel.com.br (busca TODOS os imóveis, sem filtro de modalidade)
+        const listUrl = `https://www.leilaoimovel.com.br/caixa/imoveis-caixa-em-${location.city}-${location.uf.toLowerCase()}`;
         
-        console.log(`URL: ${listUrl}`);
+        console.log(`   URL: ${listUrl}`);
         
         // Usar Firecrawl para buscar a página de resultados
         const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
@@ -130,44 +161,40 @@ Deno.serve(async (req) => {
         });
 
         if (!scrapeResponse.ok) {
-          console.error(`Erro ao buscar ${stateInfo.uf}:`, await scrapeResponse.text());
+          console.error(`   ❌ Erro ao buscar ${location.cityName}:`, await scrapeResponse.text());
           continue;
         }
 
         const scrapeData = await scrapeResponse.json();
         const html = scrapeData.data?.html || scrapeData.html || '';
 
-        // Extrair links de imóveis individuais
-        const propertyLinks = extractPropertyLinks(html);
-        console.log(`📦 Encontrados ${propertyLinks.length} imóveis em ${stateInfo.name}`);
+        // Verificar se retornou erro
+        if (html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado')) {
+          console.log(`   ⚠️ Página não disponível para ${location.cityName}`);
+          continue;
+        }
+
+        // Extrair links e dados básicos direto do HTML da listagem
+        const propertiesFromList = extractPropertiesFromList(html, location.uf, location.cityName);
+        console.log(`   📦 Encontrados ${propertiesFromList.length} imóveis`);
         
-        // Processar cada imóvel
-        let processedCount = 0;
-        for (const link of propertyLinks) {
-          try {
-            const property = await fetchPropertyDetails(firecrawlApiKey, link, stateInfo.uf);
-            if (property) {
-              allProperties.push(property);
-              processedCount++;
-              console.log(`  ✓ [${processedCount}/${propertyLinks.length}] ${property.title?.substring(0, 50)}...`);
-            }
-            
-            // Pequeno delay entre requisições
-            await new Promise(resolve => setTimeout(resolve, 400));
-          } catch (err) {
-            console.error(`  ✗ Erro ao buscar detalhes:`, err);
+        // Adicionar apenas os que não foram vistos antes
+        for (const prop of propertiesFromList) {
+          if (!seenPropertyIds.has(prop.id)) {
+            seenPropertyIds.add(prop.id);
+            allProperties.push(prop);
           }
         }
 
-        // Delay entre estados
+        // Delay entre cidades
         await new Promise(resolve => setTimeout(resolve, 500));
 
       } catch (err) {
-        console.error(`Erro ao processar ${stateInfo.uf}:`, err);
+        console.error(`   ❌ Erro ao processar ${location.cityName}:`, err);
       }
     }
 
-    console.log(`\n📊 Total de imóveis coletados: ${allProperties.length}`);
+    console.log(`\n📊 Total de imóveis únicos coletados: ${allProperties.length}`);
 
     let propertiesFound = allProperties.length;
     let propertiesNew = 0;
@@ -262,312 +289,149 @@ Deno.serve(async (req) => {
   }
 });
 
-function extractPropertyLinks(html: string): string[] {
-  const links: string[] = [];
-  const seen = new Set<string>();
+function extractPropertiesFromList(html: string, stateUf: string, cityName: string): CaixaPropertyData[] {
+  const properties: CaixaPropertyData[] = [];
   
-  // Regex para encontrar links de imóveis individuais
-  // Formato: /imovel/{uf}/{cidade}/{slug}-{id}-{codigo}-venda-direta-caixa
-  const linkRegex = /href="(https:\/\/www\.leilaoimovel\.com\.br\/imovel\/[a-z]{2}\/[^"]+(?:venda-direta-caixa|venda-online-caixa)[^"]*)"/gi;
+  // Regex para extrair cada bloco de imóvel (place-box)
+  const placeBoxRegex = /<div class="place-box">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
   
   let match;
-  while ((match = linkRegex.exec(html)) !== null) {
-    const url = match[1];
-    if (!seen.has(url)) {
-      seen.add(url);
-      links.push(url);
-    }
-  }
-  
-  // Também buscar outros formatos de link de imóvel Caixa
-  const altLinkRegex = /href="(https:\/\/www\.leilaoimovel\.com\.br\/imovel\/[a-z]{2}\/[^"]*caixa[^"]*)"/gi;
-  while ((match = altLinkRegex.exec(html)) !== null) {
-    const url = match[1];
-    if (!seen.has(url)) {
-      seen.add(url);
-      links.push(url);
-    }
-  }
-  
-  return links;
-}
-
-async function fetchPropertyDetails(
-  apiKey: string, 
-  url: string, 
-  state: string
-): Promise<CaixaPropertyData | null> {
-  try {
-    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: url,
-        formats: ['html'],
-        waitFor: 2000,
-        onlyMainContent: false,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`Erro ao buscar detalhes: ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    const html = data.data?.html || data.html || '';
-
-    return parsePropertyDetails(html, url, state);
-  } catch (err) {
-    console.error('Erro ao buscar detalhes:', err);
-    return null;
-  }
-}
-
-function parsePropertyDetails(
-  html: string, 
-  url: string, 
-  state: string
-): CaixaPropertyData | null {
-  try {
-    // Extrair ID do imóvel da URL (formato: ...-1580032-8444405978325-venda-direta-caixa)
-    const idMatch = url.match(/-(\d{6,})-(\d+)-(?:venda|leilao)/i);
-    const id = idMatch ? `${idMatch[1]}-${idMatch[2]}` : `caixa_${Date.now()}`;
-    
-    // Extrair título do h1 ou h2
-    // Formato: "Casa Caixa em Fortaleza / CE - 1580032"
-    let title = '';
-    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    if (h1Match) {
-      title = h1Match[1].trim();
-    } else {
-      const h2Match = html.match(/<h2[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)<\/h2>/i);
-      if (h2Match) {
-        title = h2Match[1].trim();
+  while ((match = placeBoxRegex.exec(html)) !== null) {
+    try {
+      const block = match[1];
+      
+      // Extrair link do imóvel
+      const linkMatch = block.match(/href="(https:\/\/www\.leilaoimovel\.com\.br\/imovel\/[^"]+)"/i);
+      if (!linkMatch) continue;
+      
+      const link = linkMatch[1];
+      
+      // Extrair ID do imóvel (formato: ...-1580032-8444405978325-venda-direta-caixa)
+      const idMatch = link.match(/-(\d{6,})-(\d+)-/);
+      const id = idMatch ? `${idMatch[1]}-${idMatch[2]}` : `caixa_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Extrair título (b dentro de .address p)
+      let title = '';
+      const titleMatch = block.match(/<b>([^<]+Caixa[^<]+)<\/b>/i);
+      if (titleMatch) {
+        title = titleMatch[1].trim();
       }
-    }
-    
-    if (!title) {
-      // Tentar extrair do meta title
-      const metaMatch = html.match(/<title>([^<]+)<\/title>/i);
-      if (metaMatch) {
-        title = metaMatch[1].split('|')[0].trim();
+      
+      // Extrair tipo do título
+      let type = 'casa';
+      const typeLower = title.toLowerCase();
+      if (typeLower.includes('apartamento')) type = 'apartamento';
+      else if (typeLower.includes('terreno')) type = 'terreno';
+      else if (typeLower.includes('loja')) type = 'comercial';
+      else if (typeLower.includes('sala')) type = 'comercial';
+      else if (typeLower.includes('galpão') || typeLower.includes('galpao')) type = 'comercial';
+      else if (typeLower.includes('prédio') || typeLower.includes('predio')) type = 'comercial';
+      
+      // Extrair preço com desconto
+      let price = 0;
+      const discountPriceMatch = block.match(/<span class="discount-price[^"]*">\s*R\$\s*([\d.,]+)/i);
+      if (discountPriceMatch) {
+        price = parsePrice(`R$ ${discountPriceMatch[1]}`);
       }
-    }
-    
-    // Extrair tipo de imóvel do título
-    let type = 'casa';
-    const typeLower = title.toLowerCase();
-    if (typeLower.includes('apartamento')) type = 'apartamento';
-    else if (typeLower.includes('terreno')) type = 'terreno';
-    else if (typeLower.includes('loja')) type = 'comercial';
-    else if (typeLower.includes('sala')) type = 'comercial';
-    else if (typeLower.includes('galpão') || typeLower.includes('galpao')) type = 'comercial';
-    else if (typeLower.includes('prédio') || typeLower.includes('predio')) type = 'comercial';
-    else if (typeLower.includes('comercial')) type = 'comercial';
-    
-    // Extrair preços
-    let price = 0;
-    let originalPrice = 0;
-    
-    // Preço com desconto (Valor do Imóvel)
-    const discountPriceMatch = html.match(/<h2[^>]*class="[^"]*discount-price[^"]*"[^>]*>\s*R\$\s*([\d.,]+)/i);
-    if (discountPriceMatch) {
-      price = parsePrice(`R$ ${discountPriceMatch[1]}`);
-    }
-    
-    // Preço original (Valor avaliado)
-    const avaliadoMatch = html.match(/Valor\s+avaliado[\s\S]*?<h2[^>]*>\s*R\$\s*([\d.,]+)/i);
-    if (avaliadoMatch) {
-      originalPrice = parsePrice(`R$ ${avaliadoMatch[1]}`);
-    }
-    
-    // Fallback: buscar todos os valores de preço
-    if (price === 0) {
-      const allPrices: number[] = [];
-      const priceRegex = /R\$\s*([\d]{1,3}(?:\.[\d]{3})*(?:,[\d]{2})?)/g;
-      let priceMatch;
-      while ((priceMatch = priceRegex.exec(html)) !== null) {
-        const p = parsePrice(`R$ ${priceMatch[1]}`);
-        if (p > 10000) { // Ignorar valores muito baixos
-          allPrices.push(p);
-        }
+      
+      // Extrair preço original
+      let originalPrice = 0;
+      const lastPriceMatch = block.match(/<span class="last-price[^"]*">\s*R\$\s*([\d.,]+)/i);
+      if (lastPriceMatch) {
+        originalPrice = parsePrice(`R$ ${lastPriceMatch[1]}`);
       }
-      if (allPrices.length >= 2) {
-        price = Math.min(...allPrices);
-        originalPrice = Math.max(...allPrices);
-      } else if (allPrices.length === 1) {
-        price = allPrices[0];
-        originalPrice = allPrices[0];
+      
+      if (price === 0) continue; // Pular se não tem preço
+      
+      // Extrair desconto
+      let discount = 0;
+      const discountMatch = block.match(/<b>(\d+)%\s*&nbsp;<\/b>/i);
+      if (discountMatch) {
+        discount = parseInt(discountMatch[1]);
+      } else if (originalPrice > 0 && price > 0) {
+        discount = Math.round((1 - price / originalPrice) * 100);
       }
-    }
-    
-    // Extrair desconto
-    let discount = 0;
-    const discountMatch = html.match(/<b>\s*(\d+)%\s*<\/b>/i);
-    if (discountMatch) {
-      discount = parseInt(discountMatch[1]);
-    } else if (originalPrice > 0 && price > 0) {
-      discount = Math.round((1 - price / originalPrice) * 100);
-    }
-    
-    // Extrair endereço completo
-    let address = '';
-    const addressMatch = html.match(/<p>\s*((?:RUA|AVENIDA|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA|QUADRA|LOTEAMENTO|LOT\.)[^<]+CEP:\s*[\d-]+[^<]*)<\/p>/i);
-    if (addressMatch) {
-      address = addressMatch[1].trim();
-    }
-    
-    // Extrair cidade da URL
-    let city = '';
-    const cityMatch = url.match(/\/imovel\/[a-z]{2}\/([^\/]+)\//);
-    if (cityMatch) {
-      city = cityMatch[1]
-        .replace(/-/g, ' ')
-        .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ');
-    }
-    
-    // Extrair bairro (geralmente está no endereço antes do CEP)
-    let neighborhood = '';
-    const neighborhoodMatch = address.match(/,\s*([A-Z][A-Z\s]+)\s*-\s*CEP/i);
-    if (neighborhoodMatch) {
-      neighborhood = neighborhoodMatch[1].trim();
-    }
-    
-    // Extrair área total
-    let area = 0;
-    const areaTotalMatch = html.match(/Área\s+Total:[\s\S]*?<span>\s*([\d.,]+)\s*m/i);
-    if (areaTotalMatch) {
-      area = parseFloat(areaTotalMatch[1].replace('.', '').replace(',', '.'));
-    }
-    
-    // Extrair área útil (fallback)
-    if (area === 0) {
-      const areaUtilMatch = html.match(/Área\s+Útil:[\s\S]*?<span>\s*([\d.,]+)\s*m/i);
-      if (areaUtilMatch) {
-        area = parseFloat(areaUtilMatch[1].replace('.', '').replace(',', '.'));
+      
+      // Extrair endereço (span dentro de .address p)
+      let address = '';
+      const addressMatch = block.match(/<span>([^<]*CEP:[^<]+)<\/span>/i);
+      if (addressMatch) {
+        address = addressMatch[1].trim();
       }
-    }
-    
-    // Área terreno
-    let areaTerreno: number | null = null;
-    const areaTerrenoMatch = html.match(/Área\s+Terreno:[\s\S]*?<span>\s*([\d.,]+)\s*m/i);
-    if (areaTerrenoMatch) {
-      areaTerreno = parseFloat(areaTerrenoMatch[1].replace('.', '').replace(',', '.'));
-    }
-    
-    if (area === 0 && areaTerreno) {
-      area = areaTerreno;
-    }
-    
-    // Extrair quartos
-    let bedrooms: number | null = null;
-    const bedroomsMatch = html.match(/Quartos?:[\s\S]*?<span>\s*(\d+)/i);
-    if (bedroomsMatch) {
-      bedrooms = parseInt(bedroomsMatch[1]);
-    }
-    
-    // Extrair banheiros
-    let bathrooms: number | null = null;
-    const bathroomsMatch = html.match(/Banheiros?:[\s\S]*?<span>\s*(\d+)/i);
-    if (bathroomsMatch) {
-      bathrooms = parseInt(bathroomsMatch[1]);
-    }
-    
-    // Extrair vagas
-    let parkingSpaces: number | null = null;
-    const vagasMatch = html.match(/Vagas?(?:\s+(?:de\s+)?Garagem)?:[\s\S]*?<span>\s*(\d+)/i);
-    if (vagasMatch) {
-      parkingSpaces = parseInt(vagasMatch[1]);
-    }
-    
-    // Verificar FGTS e Financiamento
-    const acceptsFgts = html.includes('ACEITA FGTS') && !html.includes('NÃO ACEITA FGTS');
-    const acceptsFinancing = html.includes('ACEITA Financiamento') && !html.includes('NÃO ACEITA Financiamento');
-    
-    // Extrair modalidade
-    let modality = 'Venda Direta Online';
-    if (html.includes('Venda Online')) {
-      modality = 'Venda Direta Online';
-    } else if (html.includes('Licitação')) {
-      modality = 'Licitação Aberta';
-    } else if (html.includes('Leilão')) {
-      modality = 'Leilão';
-    }
-    
-    // Extrair imagens em alta resolução
-    const images: string[] = [];
-    const seenImages = new Set<string>();
-    
-    // Formato: https://image.leilaoimovel.com.br/images/32/casa-caixa-...-m.webp
-    const imageRegex = /https:\/\/image\.leilaoimovel\.com\.br\/images\/[^\s"']+\.webp/gi;
-    let imgMatch;
-    while ((imgMatch = imageRegex.exec(html)) !== null) {
-      let img = imgMatch[0];
-      // Preferir versão grande (-g.webp) ao invés da média (-m.webp)
-      const largeImg = img.replace(/-m\.webp$/, '-g.webp').replace(/-p\.webp$/, '-g.webp');
-      if (!seenImages.has(largeImg)) {
-        seenImages.add(largeImg);
+      
+      // Extrair bairro do endereço
+      let neighborhood = '';
+      const neighborhoodMatch = address.match(/,\s*([A-Z][A-Z\sÀ-ÿ]+)\s*-\s*CEP/i);
+      if (neighborhoodMatch) {
+        neighborhood = neighborhoodMatch[1].trim();
+      }
+      
+      // Extrair imagem
+      const images: string[] = [];
+      const imgMatch = block.match(/src="(https:\/\/image\.leilaoimovel\.com\.br\/images\/[^"]+)"/i);
+      if (imgMatch) {
+        // Converter para versão grande da imagem
+        const largeImg = imgMatch[1].replace(/-m\.webp$/, '-g.webp').replace(/-p\.webp$/, '-g.webp');
         images.push(largeImg);
       }
+      
+      // Extrair modalidade das categorias
+      let modality = 'Venda Direta Online';
+      if (block.includes('Leilão')) {
+        modality = 'Leilão';
+      } else if (block.includes('Licitação')) {
+        modality = 'Licitação Aberta';
+      } else if (block.includes('Venda Online')) {
+        modality = 'Venda Direta Online';
+      }
+      
+      // Verificar FGTS
+      const acceptsFgts = block.includes('/imoveis/fgts') || block.includes('FGTS');
+      
+      // Extrair data de encerramento
+      let auctionDate: string | null = null;
+      const dateMatch = block.match(/(?:Encerra em|encerramento):\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+      if (dateMatch) {
+        auctionDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+      }
+      
+      const property: CaixaPropertyData = {
+        id,
+        title: title || `Imóvel Caixa em ${cityName}/${stateUf}`,
+        type,
+        price,
+        originalPrice: originalPrice || price,
+        discount,
+        city: cityName,
+        state: stateUf,
+        neighborhood,
+        address,
+        bedrooms: null,
+        bathrooms: null,
+        area: 0,
+        areaTerreno: null,
+        parkingSpaces: null,
+        acceptsFgts,
+        acceptsFinancing: false, // Será determinado nos detalhes
+        modality,
+        caixaLink: link,
+        images,
+        description: `${title}. ${address}`,
+        auctionDate,
+      };
+      
+      properties.push(property);
+      
+    } catch (err) {
+      console.error('Erro ao parsear imóvel:', err);
     }
-    
-    // Extrair data de encerramento
-    let auctionDate: string | null = null;
-    const dateMatch = html.match(/Encerra\s+em:\s*(\d{2})\/(\d{2})\/(\d{4})/i);
-    if (dateMatch) {
-      auctionDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
-    }
-    
-    // Descrição (pode ser extraída de várias formas)
-    let description = `${title}. ${address}`;
-    if (acceptsFgts) description += ' Aceita FGTS.';
-    if (acceptsFinancing) description += ' Aceita Financiamento.';
-    
-    // Validar dados mínimos
-    if (!title || price === 0) {
-      console.log(`  ⚠ Dados incompletos para ${url}`);
-      return null;
-    }
-    
-    return {
-      id,
-      title,
-      type,
-      price,
-      originalPrice: originalPrice || price,
-      discount,
-      city,
-      state: state.toUpperCase(),
-      neighborhood,
-      address,
-      bedrooms,
-      bathrooms,
-      area: area || 0,
-      areaTerreno,
-      parkingSpaces,
-      acceptsFgts,
-      acceptsFinancing,
-      modality,
-      caixaLink: url,
-      images,
-      description,
-      auctionDate,
-    };
-  } catch (err) {
-    console.error('Erro ao parsear detalhes:', err);
-    return null;
   }
+  
+  return properties;
 }
 
 function parsePrice(priceStr: string): number {
   if (!priceStr) return 0;
-  // Remove "R$", pontos de milhar e converte vírgula para ponto
   const cleaned = priceStr
     .replace(/R\$\s*/g, '')
     .replace(/\./g, '')
