@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
       console.log(`\n🔍 Coletando links de ${stateInfo.label} (${stateUf})...`);
       
       let currentPage = 1;
-      const maxPages = 100; // Aumentar limite de páginas para pegar tudo
+      const maxPages = 10; // Limitar páginas para evitar timeout
       let hasMorePages = true;
       let statePropertyCount = 0;
       
@@ -197,6 +197,9 @@ Deno.serve(async (req) => {
             console.log(`   URL base: ${listUrl}`);
           }
           
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          
           const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
             method: 'POST',
             headers: {
@@ -209,10 +212,13 @@ Deno.serve(async (req) => {
               waitFor: 2000,
               onlyMainContent: false,
             }),
+            signal: controller.signal,
           });
+          
+          clearTimeout(timeoutId);
 
           if (!scrapeResponse.ok) {
-            console.error(`   ❌ Erro página ${currentPage}`);
+            console.error(`   ❌ Erro página ${currentPage}: ${scrapeResponse.status}`);
             hasMorePages = false;
             continue;
           }
@@ -220,7 +226,7 @@ Deno.serve(async (req) => {
           const scrapeData = await scrapeResponse.json();
           const html = scrapeData.data?.html || scrapeData.html || '';
 
-          if (html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado') || html.includes('Nenhum imóvel encontrado')) {
+          if (!html || html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado') || html.includes('Nenhum imóvel encontrado')) {
             hasMorePages = false;
             continue;
           }
@@ -253,11 +259,15 @@ Deno.serve(async (req) => {
             hasMorePages = false;
           } else {
             currentPage++;
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 200));
           }
 
         } catch (err) {
-          console.error(`   ❌ Erro:`, err);
+          if (err instanceof Error && err.name === 'AbortError') {
+            console.error(`   ⏱️ Timeout página ${currentPage}`);
+          } else {
+            console.error(`   ❌ Erro:`, err);
+          }
           hasMorePages = false;
         }
       }
@@ -265,7 +275,7 @@ Deno.serve(async (req) => {
       console.log(`   ✅ ${stateInfo.label}: ${statePropertyCount} imóveis coletados`);
       
       // Delay entre estados
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     console.log(`\n📊 Total de links coletados: ${allPropertyLinks.length}`);
@@ -291,18 +301,24 @@ Deno.serve(async (req) => {
     const newPropertyLinks = allPropertyLinks.filter(p => !existingIds.has(p.id));
     console.log(`📋 Imóveis novos para processar: ${newPropertyLinks.length}`);
     
-    // FASE 2: Buscar detalhes de cada imóvel novo
-    console.log(`\n🔎 Fase 2: Buscando detalhes completos...`);
+    // FASE 2: Buscar detalhes de cada imóvel novo (limitar a 20 por execução para evitar timeout)
+    const maxNewProperties = 20;
+    const propertiesToProcess = newPropertyLinks.slice(0, maxNewProperties);
+    
+    console.log(`\n🔎 Fase 2: Buscando detalhes de ${propertiesToProcess.length} imóveis (max ${maxNewProperties})...`);
     
     let propertiesNew = 0;
-    const batchSize = 5;
+    const batchSize = 3; // Reduzir batch para evitar sobrecarga
     
-    for (let i = 0; i < newPropertyLinks.length; i += batchSize) {
-      const batch = newPropertyLinks.slice(i, i + batchSize);
+    for (let i = 0; i < propertiesToProcess.length; i += batchSize) {
+      const batch = propertiesToProcess.slice(i, i + batchSize);
       
-      // Processar batch em paralelo
+      // Processar batch em paralelo com timeout
       const detailPromises = batch.map(async (link) => {
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 25000);
+          
           const detailResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
             method: 'POST',
             headers: {
@@ -315,10 +331,13 @@ Deno.serve(async (req) => {
               waitFor: 2000,
               onlyMainContent: false,
             }),
+            signal: controller.signal,
           });
+          
+          clearTimeout(timeoutId);
 
           if (!detailResponse.ok) {
-            console.error(`   ❌ Erro ao buscar ${link.id}`);
+            console.error(`   ❌ Erro ao buscar ${link.id}: ${detailResponse.status}`);
             return null;
           }
 
@@ -329,7 +348,11 @@ Deno.serve(async (req) => {
           return extractPropertyDetails(html, link);
           
         } catch (err) {
-          console.error(`   ❌ Erro ${link.id}:`, err);
+          if (err instanceof Error && err.name === 'AbortError') {
+            console.error(`   ⏱️ Timeout ${link.id}`);
+          } else {
+            console.error(`   ❌ Erro ${link.id}:`, err);
+          }
           return null;
         }
       });
@@ -378,7 +401,7 @@ Deno.serve(async (req) => {
       console.log(`   ✅ Batch ${Math.floor(i/batchSize) + 1}: ${successCount}/${batch.length} processados (Total: ${propertiesNew})`);
       
       // Delay entre batches
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     // Atualizar log e config
