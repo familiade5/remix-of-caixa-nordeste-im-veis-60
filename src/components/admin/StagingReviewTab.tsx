@@ -8,13 +8,17 @@ import {
   useScrapingConfigs,
   useScrapingLogs,
   useRunScraping,
+  useDeleteStagingProperty,
+  useBulkDeleteStaging,
+  useClearAllStaging,
   StagingProperty,
 } from '@/hooks/useProperties';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -22,6 +26,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Download,
   X,
@@ -42,6 +54,10 @@ import {
   Search,
   Filter,
   SlidersHorizontal,
+  Trash2,
+  Link,
+  Globe,
+  AlertTriangle,
 } from 'lucide-react';
 import { NORTHEAST_STATES, PROPERTY_TYPES, PRICE_RANGES } from '@/types/property';
 
@@ -82,6 +98,15 @@ export function StagingReviewTab() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [priceFilter, setPriceFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(true);
+  
+  // Scraping options
+  const [scrapeStateFilter, setScrapeStateFilter] = useState('all');
+  const [manualUrl, setManualUrl] = useState('');
+  const [showManualUrlInput, setShowManualUrlInput] = useState(false);
+  
+  // Dialogs
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data: pendingProperties, isLoading, refetch } = useStagingProperties('pending');
   const { data: configs } = useScrapingConfigs();
@@ -91,6 +116,9 @@ export function StagingReviewTab() {
   const ignoreMutation = useIgnoreProperty();
   const bulkImportMutation = useBulkImport();
   const runScrapingMutation = useRunScraping();
+  const deleteStagingMutation = useDeleteStagingProperty();
+  const bulkDeleteStagingMutation = useBulkDeleteStaging();
+  const clearAllStagingMutation = useClearAllStaging();
 
   // Filtrar propriedades
   const filteredProperties = useMemo(() => {
@@ -155,10 +183,34 @@ export function StagingReviewTab() {
     }
   };
 
+  const handleBulkDelete = () => {
+    if (selectedIds.length > 0) {
+      bulkDeleteStagingMutation.mutate(selectedIds, {
+        onSuccess: () => {
+          setSelectedIds([]);
+          setShowDeleteConfirm(false);
+        },
+      });
+    }
+  };
+
   const handleRunScraping = () => {
     if (configs && configs.length > 0) {
-      runScrapingMutation.mutate(configs[0].id);
+      const states = scrapeStateFilter !== 'all' ? [scrapeStateFilter] : undefined;
+      const url = showManualUrlInput && manualUrl.trim() ? manualUrl.trim() : undefined;
+      
+      runScrapingMutation.mutate({
+        configId: configs[0].id,
+        states,
+        manualUrl: url,
+      });
     }
+  };
+
+  const handleClearAllStaging = () => {
+    clearAllStagingMutation.mutate(undefined, {
+      onSuccess: () => setShowClearConfirm(false),
+    });
   };
 
   const clearFilters = () => {
@@ -181,51 +233,93 @@ export function StagingReviewTab() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <RefreshCw className="h-5 w-5 text-primary" />
-              Coleta Automática
+              Coleta de Imóveis
             </CardTitle>
+            <CardDescription>
+              Busque imóveis automaticamente ou adicione uma URL manualmente
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {activeConfig ? (
-              <>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Configuração:</span>
-                  <span className="font-medium">{activeConfig.name}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Estados:</span>
-                  <div className="flex gap-1 flex-wrap justify-end">
-                    {activeConfig.states.slice(0, 5).map(s => (
-                      <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
-                    ))}
-                    {activeConfig.states.length > 5 && (
-                      <Badge variant="secondary" className="text-xs">+{activeConfig.states.length - 5}</Badge>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Última execução:</span>
-                  <span className="font-medium">{formatDate(activeConfig.last_run_at)}</span>
-                </div>
-                <Button 
-                  onClick={handleRunScraping} 
-                  className="w-full hero-gradient"
-                  disabled={runScrapingMutation.isPending}
+            {/* Filtro de Estado para Scraping */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Estado para buscar</label>
+              <Select value={scrapeStateFilter} onValueChange={setScrapeStateFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os estados" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os estados (Nordeste)</SelectItem>
+                  {NORTHEAST_STATES.filter(s => s.value !== 'all').map((state) => (
+                    <SelectItem key={state.value} value={state.value}>
+                      {state.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Toggle URL Manual */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant={showManualUrlInput ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowManualUrlInput(!showManualUrlInput)}
+              >
+                <Link className="h-4 w-4 mr-2" />
+                URL Manual
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Para buscar em outros sites
+              </span>
+            </div>
+
+            {/* Input URL Manual */}
+            <AnimatePresence>
+              {showManualUrlInput && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="space-y-2"
                 >
-                  {runScrapingMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Buscando...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Buscar Novos Imóveis
-                    </>
-                  )}
-                </Button>
-              </>
-            ) : (
-              <p className="text-muted-foreground text-sm">Nenhuma configuração encontrada</p>
+                  <Textarea
+                    placeholder="Cole a URL aqui... (ex: https://www.leilaoimovel.com.br/...)"
+                    value={manualUrl}
+                    onChange={(e) => setManualUrl(e.target.value)}
+                    className="min-h-[80px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    <Globe className="h-3 w-3 inline mr-1" />
+                    A IA tentará extrair os imóveis desta URL
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <Button 
+              onClick={handleRunScraping} 
+              className="w-full hero-gradient"
+              disabled={runScrapingMutation.isPending}
+            >
+              {runScrapingMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Buscando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  {showManualUrlInput && manualUrl ? 'Buscar da URL' : 'Buscar Novos Imóveis'}
+                </>
+              )}
+            </Button>
+
+            {/* Última execução */}
+            {activeConfig?.last_run_at && (
+              <div className="flex items-center justify-between text-sm text-muted-foreground pt-2 border-t">
+                <span>Última busca:</span>
+                <span>{formatDate(activeConfig.last_run_at)}</span>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -271,7 +365,7 @@ export function StagingReviewTab() {
         </Card>
       </div>
 
-      {/* Filters Card - Inspired by ZAP/QuintoAndar */}
+      {/* Filters Card */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -423,7 +517,7 @@ export function StagingReviewTab() {
       {/* Pending Properties */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <Clock className="h-5 w-5 text-warning" />
               Imóveis Pendentes de Revisão
@@ -436,7 +530,7 @@ export function StagingReviewTab() {
                 </Badge>
               )}
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button 
                 variant="outline" 
                 size="sm"
@@ -445,20 +539,45 @@ export function StagingReviewTab() {
               >
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
-              {selectedIds.length > 0 && (
+              
+              {/* Limpar tudo */}
+              {pendingProperties && pendingProperties.length > 0 && (
                 <Button
+                  variant="outline"
                   size="sm"
-                  onClick={handleBulkImport}
-                  disabled={bulkImportMutation.isPending}
-                  className="hero-gradient"
+                  onClick={() => setShowClearConfirm(true)}
+                  className="text-destructive hover:bg-destructive/10"
                 >
-                  {bulkImportMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  Importar ({selectedIds.length})
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Limpar Tudo
                 </Button>
+              )}
+
+              {selectedIds.length > 0 && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Deletar ({selectedIds.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleBulkImport}
+                    disabled={bulkImportMutation.isPending}
+                    className="hero-gradient"
+                  >
+                    {bulkImportMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Importar ({selectedIds.length})
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -624,10 +743,19 @@ export function StagingReviewTab() {
                           variant="outline"
                           onClick={() => ignoreMutation.mutate(property.id)}
                           disabled={ignoreMutation.isPending}
-                          className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive"
+                          className="hover:bg-muted"
                         >
                           <X className="h-4 w-4 mr-1" />
                           Ignorar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => deleteStagingMutation.mutate(property.id)}
+                          disabled={deleteStagingMutation.isPending}
+                          className="text-destructive hover:bg-destructive/10 hover:border-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                         {property.caixa_link && (
                           <a 
@@ -641,7 +769,7 @@ export function StagingReviewTab() {
                               variant="ghost"
                             >
                               <ExternalLink className="h-4 w-4 mr-1" />
-                              Ver na Caixa
+                              Ver Original
                             </Button>
                           </a>
                         )}
@@ -654,6 +782,72 @@ export function StagingReviewTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Clear All Confirmation Dialog */}
+      <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Limpar Todos os Imóveis?
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação irá remover permanentemente todos os {pendingProperties?.length || 0} imóveis 
+              pendentes do staging. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearConfirm(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleClearAllStaging}
+              disabled={clearAllStagingMutation.isPending}
+            >
+              {clearAllStagingMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Limpar Tudo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Deletar Imóveis Selecionados?
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação irá remover permanentemente {selectedIds.length} imóveis selecionados. 
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleBulkDelete}
+              disabled={bulkDeleteStagingMutation.isPending}
+            >
+              {bulkDeleteStagingMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Deletar {selectedIds.length} Imóveis
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

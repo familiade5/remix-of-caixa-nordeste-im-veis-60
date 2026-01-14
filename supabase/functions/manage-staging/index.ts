@@ -101,6 +101,115 @@ Deno.serve(async (req) => {
         );
       }
 
+      case 'delete-staging': {
+        const { error: deleteError } = await supabase
+          .from('staging_properties')
+          .delete()
+          .eq('id', stagingId);
+
+        if (deleteError) {
+          console.error('Delete error:', deleteError);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao deletar imóvel do staging' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'delete-property': {
+        const { error: deleteError } = await supabase
+          .from('properties')
+          .delete()
+          .eq('id', propertyId);
+
+        if (deleteError) {
+          console.error('Delete error:', deleteError);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao deletar imóvel' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'bulk-delete-staging': {
+        const { stagingIds } = updates;
+        let deleted = 0;
+
+        for (const id of stagingIds) {
+          const { error } = await supabase
+            .from('staging_properties')
+            .delete()
+            .eq('id', id);
+
+          if (!error) {
+            deleted++;
+          }
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, deleted }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'clear-all-staging': {
+        const { count } = await supabase
+          .from('staging_properties')
+          .select('*', { count: 'exact', head: true });
+
+        const { error: deleteError } = await supabase
+          .from('staging_properties')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+
+        if (deleteError) {
+          console.error('Delete error:', deleteError);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao limpar staging' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, deleted: count || 0 }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'clear-all-properties': {
+        const { count } = await supabase
+          .from('properties')
+          .select('*', { count: 'exact', head: true });
+
+        const { error: deleteError } = await supabase
+          .from('properties')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+
+        if (deleteError) {
+          console.error('Delete error:', deleteError);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao limpar imóveis' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, deleted: count || 0 }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       case 'update-property-status': {
         const { error: updateError } = await supabase
           .from('properties')
