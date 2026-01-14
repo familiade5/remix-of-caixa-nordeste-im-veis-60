@@ -344,8 +344,10 @@ export function StagingReviewTab() {
                         <CheckCircle2 className="h-4 w-4 text-success" />
                       ) : log.status === 'running' ? (
                         <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                      ) : (
+                      ) : log.status === 'failed' ? (
                         <XCircle className="h-4 w-4 text-destructive" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 text-amber-500" />
                       )}
                       <span className="text-muted-foreground">
                         {formatDate(log.started_at)}
