@@ -664,13 +664,19 @@ export function StagingReviewTab() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <Badge variant="outline" className="text-xs">
                               {getPropertyTypeLabel(property.type)}
                             </Badge>
                             <Badge variant="secondary" className="text-xs">
                               {property.address_state}
                             </Badge>
+                            {property.alreadyImported && (
+                              <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30 text-xs">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Já Importado
+                              </Badge>
+                            )}
                           </div>
                           <h4 className="font-medium line-clamp-1">
                             {property.title || 'Imóvel sem título'}
