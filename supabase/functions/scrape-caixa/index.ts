@@ -5,18 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Estados do Nordeste com URL para buscar TODO o estado
-const NORTHEAST_STATE_URLS: Record<string, { label: string; urlSlug: string }> = {
-  'CE': { label: 'Ceará', urlSlug: 'imoveis-caixa-no-ceara-ce' },
-  'BA': { label: 'Bahia', urlSlug: 'imoveis-caixa-na-bahia-ba' },
-  'PE': { label: 'Pernambuco', urlSlug: 'imoveis-caixa-em-pernambuco-pe' },
-  'MA': { label: 'Maranhão', urlSlug: 'imoveis-caixa-no-maranhao-ma' },
-  'PB': { label: 'Paraíba', urlSlug: 'imoveis-caixa-na-paraiba-pb' },
-  'RN': { label: 'Rio Grande do Norte', urlSlug: 'imoveis-caixa-no-rio-grande-do-norte-rn' },
-  'AL': { label: 'Alagoas', urlSlug: 'imoveis-caixa-em-alagoas-al' },
-  'PI': { label: 'Piauí', urlSlug: 'imoveis-caixa-no-piaui-pi' },
-  'SE': { label: 'Sergipe', urlSlug: 'imoveis-caixa-em-sergipe-se' },
+// URLs alternativas que funcionam melhor - por modalidade/região
+const SEARCH_URLS = {
+  // Busca por modalidade - Venda Direta (mais estável)
+  vendaDireta: 'https://www.leilaoimovel.com.br/imoveis/caixa/venda-direta',
+  // Busca por tipo de imóvel da Caixa
+  caixaGeral: 'https://www.leilaoimovel.com.br/imoveis/caixa',
+  // Busca por estados específicos (usando formato diferente)
+  nordeste: 'https://www.leilaoimovel.com.br/imoveis/caixa?regiao=nordeste',
 };
+
+// Mapeamento de estados do Nordeste
+const NORTHEAST_STATES = ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'];
 
 interface CaixaPropertyData {
   id: string;
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
           await supabase
             .from('scraping_logs')
             .update({
-              status: 'error',
+              status: 'failed',
               finished_at: new Date().toISOString(),
               error_message: err instanceof Error ? err.message : 'Unknown error',
             })
@@ -161,44 +161,45 @@ Deno.serve(async (req) => {
     const allPropertyLinks: PropertyLink[] = [];
     const seenPropertyIds = new Set<string>();
     
-    // Filtrar estados - priorizar parâmetro states, depois config
+    // Filtrar estados
     let filterStates: string[] = [];
     if (states && states.length > 0) {
       filterStates = states.map((s: string) => s.toUpperCase());
-      console.log(`📍 Filtrando por estados selecionados: ${filterStates.join(', ')}`);
     } else {
-      filterStates = config.states?.map((s: string) => s.toUpperCase()) || ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'];
+      filterStates = config.states?.map((s: string) => s.toUpperCase()) || NORTHEAST_STATES;
     }
     
-    console.log(`📍 Fase 1: Coletando links de ${filterStates.length} estados`);
+    console.log(`📍 Estados filtrados: ${filterStates.join(', ')}`);
     
-    // FASE 1: Para cada estado, buscar TODOS os imóveis com paginação completa
-    for (const stateUf of filterStates) {
-      const stateInfo = NORTHEAST_STATE_URLS[stateUf];
-      if (!stateInfo) {
-        console.log(`⚠️ Estado ${stateUf} não configurado, pulando...`);
-        continue;
-      }
-      
-      console.log(`\n🔍 Coletando links de ${stateInfo.label} (${stateUf})...`);
+    // ESTRATÉGIA: Usar busca geral da Caixa e filtrar por estados do Nordeste
+    const searchUrls = [
+      SEARCH_URLS.caixaGeral,
+      SEARCH_URLS.vendaDireta,
+    ];
+    
+    console.log(`\n📍 Fase 1: Coletando links de ${searchUrls.length} fontes`);
+    
+    for (const baseUrl of searchUrls) {
+      console.log(`\n🔍 Buscando em: ${baseUrl}`);
       
       let currentPage = 1;
-      const maxPages = 10; // Limitar páginas para evitar timeout
+      const maxPages = 15; // Mais páginas para compensar filtragem
       let hasMorePages = true;
-      let statePropertyCount = 0;
+      let urlPropertyCount = 0;
+      let consecutiveEmptyPages = 0;
       
-      while (hasMorePages && currentPage <= maxPages) {
+      while (hasMorePages && currentPage <= maxPages && consecutiveEmptyPages < 2) {
         try {
           const listUrl = currentPage === 1 
-            ? `https://www.leilaoimovel.com.br/caixa/${stateInfo.urlSlug}`
-            : `https://www.leilaoimovel.com.br/caixa/${stateInfo.urlSlug}?pag=${currentPage}`;
+            ? baseUrl
+            : `${baseUrl}?pag=${currentPage}`;
           
           if (currentPage === 1) {
             console.log(`   URL base: ${listUrl}`);
           }
           
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
           
           const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
             method: 'POST',
@@ -209,7 +210,7 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               url: listUrl,
               formats: ['html'],
-              waitFor: 2000,
+              waitFor: 3000,
               onlyMainContent: false,
             }),
             signal: controller.signal,
@@ -219,25 +220,40 @@ Deno.serve(async (req) => {
 
           if (!scrapeResponse.ok) {
             console.error(`   ❌ Erro página ${currentPage}: ${scrapeResponse.status}`);
-            hasMorePages = false;
+            consecutiveEmptyPages++;
+            currentPage++;
             continue;
           }
 
           const scrapeData = await scrapeResponse.json();
           const html = scrapeData.data?.html || scrapeData.html || '';
 
-          if (!html || html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado') || html.includes('Nenhum imóvel encontrado')) {
-            hasMorePages = false;
+          // Verificar se página tem erro ou está vazia
+          if (!html || html.length < 1000) {
+            console.log(`   ⚠️ Página ${currentPage} vazia ou muito pequena`);
+            consecutiveEmptyPages++;
+            currentPage++;
+            continue;
+          }
+
+          if (html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado')) {
+            console.log(`   ⚠️ Página ${currentPage} com erro do site`);
+            consecutiveEmptyPages++;
+            currentPage++;
             continue;
           }
 
           // Extrair links dos imóveis
-          const linksFromPage = extractPropertyLinks(html, stateUf);
+          const linksFromPage = extractPropertyLinks(html, filterStates);
           
           if (linksFromPage.length === 0) {
-            hasMorePages = false;
+            console.log(`   📄 Pág ${currentPage}: 0 imóveis encontrados`);
+            consecutiveEmptyPages++;
+            currentPage++;
             continue;
           }
+          
+          consecutiveEmptyPages = 0; // Reset contador
           
           let newLinksCount = 0;
           for (const link of linksFromPage) {
@@ -245,7 +261,7 @@ Deno.serve(async (req) => {
               seenPropertyIds.add(link.id);
               allPropertyLinks.push(link);
               newLinksCount++;
-              statePropertyCount++;
+              urlPropertyCount++;
             }
           }
           
@@ -253,13 +269,15 @@ Deno.serve(async (req) => {
           
           // Verificar próxima página
           const hasNextPageLink = html.includes(`pag=${currentPage + 1}`) || 
-                                  (linksFromPage.length >= 18);
+                                  html.includes('proxima') ||
+                                  html.includes('próxima') ||
+                                  linksFromPage.length >= 12;
           
-          if (!hasNextPageLink || linksFromPage.length < 10) {
+          if (!hasNextPageLink || linksFromPage.length < 8) {
             hasMorePages = false;
           } else {
             currentPage++;
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 500)); // 500ms entre páginas
           }
 
         } catch (err) {
@@ -268,14 +286,15 @@ Deno.serve(async (req) => {
           } else {
             console.error(`   ❌ Erro:`, err);
           }
-          hasMorePages = false;
+          consecutiveEmptyPages++;
+          currentPage++;
         }
       }
       
-      console.log(`   ✅ ${stateInfo.label}: ${statePropertyCount} imóveis coletados`);
+      console.log(`   ✅ Fonte processada: ${urlPropertyCount} imóveis coletados`);
       
-      // Delay entre estados
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Delay entre fontes
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     console.log(`\n📊 Total de links coletados: ${allPropertyLinks.length}`);
@@ -301,14 +320,45 @@ Deno.serve(async (req) => {
     const newPropertyLinks = allPropertyLinks.filter(p => !existingIds.has(p.id));
     console.log(`📋 Imóveis novos para processar: ${newPropertyLinks.length}`);
     
-    // FASE 2: Buscar detalhes de cada imóvel novo (limitar a 20 por execução para evitar timeout)
-    const maxNewProperties = 20;
+    if (newPropertyLinks.length === 0) {
+      // Atualizar log
+      if (logEntry) {
+        await supabase
+          .from('scraping_logs')
+          .update({
+            status: 'completed',
+            finished_at: new Date().toISOString(),
+            properties_found: allPropertyLinks.length,
+            properties_new: 0,
+          })
+          .eq('id', logEntry.id);
+      }
+
+      await supabase
+        .from('scraping_config')
+        .update({ last_run_at: new Date().toISOString() })
+        .eq('id', configId);
+
+      console.log(`\n✅ Scraping concluído: ${allPropertyLinks.length} encontrados, 0 novos`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          propertiesFound: allPropertyLinks.length,
+          propertiesNew: 0,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // FASE 2: Buscar detalhes de cada imóvel novo
+    const maxNewProperties = 25;
     const propertiesToProcess = newPropertyLinks.slice(0, maxNewProperties);
     
     console.log(`\n🔎 Fase 2: Buscando detalhes de ${propertiesToProcess.length} imóveis (max ${maxNewProperties})...`);
     
     let propertiesNew = 0;
-    const batchSize = 3; // Reduzir batch para evitar sobrecarga
+    const batchSize = 3;
     
     for (let i = 0; i < propertiesToProcess.length; i += batchSize) {
       const batch = propertiesToProcess.slice(i, i + batchSize);
@@ -317,7 +367,7 @@ Deno.serve(async (req) => {
       const detailPromises = batch.map(async (link) => {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 25000);
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
           
           const detailResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
             method: 'POST',
@@ -328,7 +378,7 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               url: link.url,
               formats: ['html'],
-              waitFor: 2000,
+              waitFor: 3000,
               onlyMainContent: false,
             }),
             signal: controller.signal,
@@ -343,6 +393,11 @@ Deno.serve(async (req) => {
 
           const detailData = await detailResponse.json();
           const html = detailData.data?.html || detailData.html || '';
+          
+          if (!html || html.length < 500) {
+            console.error(`   ❌ HTML vazio para ${link.id}`);
+            return null;
+          }
           
           // Extrair detalhes completos
           return extractPropertyDetails(html, link);
@@ -401,7 +456,7 @@ Deno.serve(async (req) => {
       console.log(`   ✅ Batch ${Math.floor(i/batchSize) + 1}: ${successCount}/${batch.length} processados (Total: ${propertiesNew})`);
       
       // Delay entre batches
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     // Atualizar log e config
@@ -469,7 +524,7 @@ async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Prom
   const html = scrapeData.data?.html || scrapeData.html || '';
   
   // Tentar extrair links de listagem primeiro
-  const propertyLinks = extractPropertyLinks(html, '');
+  const propertyLinks = extractPropertyLinks(html, NORTHEAST_STATES);
   
   if (propertyLinks.length > 0) {
     console.log(`Encontrados ${propertyLinks.length} links de imóveis`);
@@ -485,7 +540,7 @@ async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Prom
     let inserted = 0;
     
     // Processar cada link
-    for (const link of newLinks.slice(0, 50)) { // Limitar a 50 por vez
+    for (const link of newLinks.slice(0, 30)) {
       try {
         const detailResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
           method: 'POST',
@@ -496,7 +551,7 @@ async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Prom
           body: JSON.stringify({
             url: link.url,
             formats: ['html'],
-            waitFor: 2000,
+            waitFor: 3000,
           }),
         });
 
@@ -535,7 +590,7 @@ async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Prom
           }
         }
         
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 400));
       } catch (e) {
         console.error('Erro ao processar link:', e);
       }
@@ -602,10 +657,10 @@ async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Prom
   return { found: 0, new: 0 };
 }
 
-function extractPropertyLinks(html: string, stateUf: string): PropertyLink[] {
+function extractPropertyLinks(html: string, filterStates: string[]): PropertyLink[] {
   const links: PropertyLink[] = [];
   
-  // Regex para extrair links de imóveis
+  // Regex para extrair links de imóveis - aceita ambos formatos
   const linkRegex = /href="(https:\/\/www\.leilaoimovel\.com\.br\/imovel\/[^"]+)"/gi;
   
   let match;
@@ -618,7 +673,7 @@ function extractPropertyLinks(html: string, stateUf: string): PropertyLink[] {
     
     // Extrair cidade/estado do URL
     let city = '';
-    let state = stateUf;
+    let state = '';
     
     const locationMatch = url.match(/em-([^-]+(?:-[^-]+)*)-([a-z]{2})\//i);
     if (locationMatch) {
@@ -627,6 +682,11 @@ function extractPropertyLinks(html: string, stateUf: string): PropertyLink[] {
         .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join(' ');
       state = locationMatch[2].toUpperCase();
+    }
+    
+    // Filtrar por estados se especificado
+    if (filterStates.length > 0 && state && !filterStates.includes(state)) {
+      continue; // Pular imóveis de outros estados
     }
     
     if (id && !links.some(l => l.id === id)) {
