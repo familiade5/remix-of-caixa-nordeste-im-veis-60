@@ -5,48 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Estados do Nordeste com suas principais cidades
-const NORTHEAST_LOCATIONS = [
-  // Ceará
-  { uf: 'CE', city: 'fortaleza', cityName: 'Fortaleza' },
-  { uf: 'CE', city: 'caucaia', cityName: 'Caucaia' },
-  { uf: 'CE', city: 'maracanau', cityName: 'Maracanaú' },
-  { uf: 'CE', city: 'juazeiro-do-norte', cityName: 'Juazeiro do Norte' },
-  { uf: 'CE', city: 'sobral', cityName: 'Sobral' },
-  // Bahia
-  { uf: 'BA', city: 'salvador', cityName: 'Salvador' },
-  { uf: 'BA', city: 'feira-de-santana', cityName: 'Feira de Santana' },
-  { uf: 'BA', city: 'vitoria-da-conquista', cityName: 'Vitória da Conquista' },
-  { uf: 'BA', city: 'camacari', cityName: 'Camaçari' },
-  { uf: 'BA', city: 'lauro-de-freitas', cityName: 'Lauro de Freitas' },
-  // Pernambuco
-  { uf: 'PE', city: 'recife', cityName: 'Recife' },
-  { uf: 'PE', city: 'jaboatao-dos-guararapes', cityName: 'Jaboatão dos Guararapes' },
-  { uf: 'PE', city: 'olinda', cityName: 'Olinda' },
-  { uf: 'PE', city: 'caruaru', cityName: 'Caruaru' },
-  { uf: 'PE', city: 'paulista', cityName: 'Paulista' },
-  // Maranhão
-  { uf: 'MA', city: 'sao-luis', cityName: 'São Luís' },
-  { uf: 'MA', city: 'imperatriz', cityName: 'Imperatriz' },
-  { uf: 'MA', city: 'caxias', cityName: 'Caxias' },
-  // Paraíba
-  { uf: 'PB', city: 'joao-pessoa', cityName: 'João Pessoa' },
-  { uf: 'PB', city: 'campina-grande', cityName: 'Campina Grande' },
-  { uf: 'PB', city: 'santa-rita', cityName: 'Santa Rita' },
-  // Rio Grande do Norte
-  { uf: 'RN', city: 'natal', cityName: 'Natal' },
-  { uf: 'RN', city: 'mossoro', cityName: 'Mossoró' },
-  { uf: 'RN', city: 'parnamirim', cityName: 'Parnamirim' },
-  // Alagoas
-  { uf: 'AL', city: 'maceio', cityName: 'Maceió' },
-  { uf: 'AL', city: 'arapiraca', cityName: 'Arapiraca' },
-  // Piauí
-  { uf: 'PI', city: 'teresina', cityName: 'Teresina' },
-  { uf: 'PI', city: 'parnaiba', cityName: 'Parnaíba' },
-  // Sergipe
-  { uf: 'SE', city: 'aracaju', cityName: 'Aracaju' },
-  { uf: 'SE', city: 'nossa-senhora-do-socorro', cityName: 'Nossa Senhora do Socorro' },
-];
+// Estados do Nordeste com URL para buscar TODO o estado
+const NORTHEAST_STATE_URLS: Record<string, { label: string; urlSlug: string }> = {
+  'CE': { label: 'Ceará', urlSlug: 'imoveis-caixa-no-ceara-ce' },
+  'BA': { label: 'Bahia', urlSlug: 'imoveis-caixa-na-bahia-ba' },
+  'PE': { label: 'Pernambuco', urlSlug: 'imoveis-caixa-em-pernambuco-pe' },
+  'MA': { label: 'Maranhão', urlSlug: 'imoveis-caixa-no-maranhao-ma' },
+  'PB': { label: 'Paraíba', urlSlug: 'imoveis-caixa-na-paraiba-pb' },
+  'RN': { label: 'Rio Grande do Norte', urlSlug: 'imoveis-caixa-no-rio-grande-do-norte-rn' },
+  'AL': { label: 'Alagoas', urlSlug: 'imoveis-caixa-em-alagoas-al' },
+  'PI': { label: 'Piauí', urlSlug: 'imoveis-caixa-no-piaui-pi' },
+  'SE': { label: 'Sergipe', urlSlug: 'imoveis-caixa-em-sergipe-se' },
+};
 
 interface CaixaPropertyData {
   id: string;
@@ -200,26 +170,31 @@ Deno.serve(async (req) => {
       filterStates = config.states?.map((s: string) => s.toUpperCase()) || ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'];
     }
     
-    const locationsToScrape = NORTHEAST_LOCATIONS.filter(loc => filterStates.includes(loc.uf));
+    console.log(`📍 Fase 1: Coletando links de ${filterStates.length} estados`);
     
-    console.log(`📍 Fase 1: Coletando links de ${locationsToScrape.length} cidades`);
-    
-    // FASE 1: Coletar todos os links de imóveis com paginação
-    for (const location of locationsToScrape) {
-      console.log(`\n🔍 Coletando links em ${location.cityName}/${location.uf}...`);
+    // FASE 1: Para cada estado, buscar TODOS os imóveis com paginação completa
+    for (const stateUf of filterStates) {
+      const stateInfo = NORTHEAST_STATE_URLS[stateUf];
+      if (!stateInfo) {
+        console.log(`⚠️ Estado ${stateUf} não configurado, pulando...`);
+        continue;
+      }
+      
+      console.log(`\n🔍 Coletando links de ${stateInfo.label} (${stateUf})...`);
       
       let currentPage = 1;
-      const maxPages = 30;
+      const maxPages = 100; // Aumentar limite de páginas para pegar tudo
       let hasMorePages = true;
+      let statePropertyCount = 0;
       
       while (hasMorePages && currentPage <= maxPages) {
         try {
           const listUrl = currentPage === 1 
-            ? `https://www.leilaoimovel.com.br/caixa/imoveis-caixa-em-${location.city}-${location.uf.toLowerCase()}`
-            : `https://www.leilaoimovel.com.br/caixa/imoveis-caixa-em-${location.city}-${location.uf.toLowerCase()}?pag=${currentPage}`;
+            ? `https://www.leilaoimovel.com.br/caixa/${stateInfo.urlSlug}`
+            : `https://www.leilaoimovel.com.br/caixa/${stateInfo.urlSlug}?pag=${currentPage}`;
           
           if (currentPage === 1) {
-            console.log(`   URL: ${listUrl}`);
+            console.log(`   URL base: ${listUrl}`);
           }
           
           const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
@@ -245,13 +220,13 @@ Deno.serve(async (req) => {
           const scrapeData = await scrapeResponse.json();
           const html = scrapeData.data?.html || scrapeData.html || '';
 
-          if (html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado')) {
+          if (html.includes('500-errointernodeservidor') || html.includes('404-naoencontrado') || html.includes('Nenhum imóvel encontrado')) {
             hasMorePages = false;
             continue;
           }
 
           // Extrair links dos imóveis
-          const linksFromPage = extractPropertyLinks(html, location.uf, location.cityName);
+          const linksFromPage = extractPropertyLinks(html, stateUf);
           
           if (linksFromPage.length === 0) {
             hasMorePages = false;
@@ -264,10 +239,11 @@ Deno.serve(async (req) => {
               seenPropertyIds.add(link.id);
               allPropertyLinks.push(link);
               newLinksCount++;
+              statePropertyCount++;
             }
           }
           
-          console.log(`   📄 Pág ${currentPage}: ${linksFromPage.length} (${newLinksCount} novos)`);
+          console.log(`   📄 Pág ${currentPage}: ${linksFromPage.length} imóveis (${newLinksCount} novos)`);
           
           // Verificar próxima página
           const hasNextPageLink = html.includes(`pag=${currentPage + 1}`) || 
@@ -286,8 +262,10 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Pequeno delay entre cidades
-      await new Promise(resolve => setTimeout(resolve, 200));
+      console.log(`   ✅ ${stateInfo.label}: ${statePropertyCount} imóveis coletados`);
+      
+      // Delay entre estados
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     console.log(`\n📊 Total de links coletados: ${allPropertyLinks.length}`);
@@ -468,7 +446,7 @@ async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Prom
   const html = scrapeData.data?.html || scrapeData.html || '';
   
   // Tentar extrair links de listagem primeiro
-  const propertyLinks = extractPropertyLinks(html, '', '');
+  const propertyLinks = extractPropertyLinks(html, '');
   
   if (propertyLinks.length > 0) {
     console.log(`Encontrados ${propertyLinks.length} links de imóveis`);
@@ -601,7 +579,7 @@ async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Prom
   return { found: 0, new: 0 };
 }
 
-function extractPropertyLinks(html: string, stateUf: string, cityName: string): PropertyLink[] {
+function extractPropertyLinks(html: string, stateUf: string): PropertyLink[] {
   const links: PropertyLink[] = [];
   
   // Regex para extrair links de imóveis
@@ -615,16 +593,17 @@ function extractPropertyLinks(html: string, stateUf: string, cityName: string): 
     const idMatch = url.match(/-(\d{6,})-(\d+)-/);
     const id = idMatch ? `${idMatch[1]}-${idMatch[2]}` : null;
     
-    // Tentar extrair cidade/estado do URL se não fornecidos
-    let city = cityName;
+    // Extrair cidade/estado do URL
+    let city = '';
     let state = stateUf;
     
-    if (!city || !state) {
-      const locationMatch = url.match(/em-([^-]+)-([a-z]{2})/i);
-      if (locationMatch) {
-        city = city || locationMatch[1].replace(/-/g, ' ');
-        state = state || locationMatch[2].toUpperCase();
-      }
+    const locationMatch = url.match(/em-([^-]+(?:-[^-]+)*)-([a-z]{2})\//i);
+    if (locationMatch) {
+      city = locationMatch[1]
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+      state = locationMatch[2].toUpperCase();
     }
     
     if (id && !links.some(l => l.id === id)) {

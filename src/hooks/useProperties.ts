@@ -103,20 +103,36 @@ export function useDbProperties() {
   });
 }
 
-// Hook para buscar propriedades no staging
+// Hook para buscar propriedades no staging com verificação de duplicatas
 export function useStagingProperties(status: string = 'pending') {
   return useQuery({
     queryKey: ['staging-properties', status],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Buscar staging properties
+      const { data: stagingData, error: stagingError } = await supabase
         .from('staging_properties')
         .select('*')
         .eq('status', status)
         .order('scraped_at', { ascending: false });
 
-      if (error) throw error;
-      return data as StagingProperty[];
+      if (stagingError) throw stagingError;
+
+      // Buscar external_ids das propriedades já importadas
+      const { data: importedData } = await supabase
+        .from('properties')
+        .select('external_id');
+
+      const importedExternalIds = new Set(
+        importedData?.map(p => p.external_id).filter(Boolean) || []
+      );
+
+      // Marcar quais já foram importadas
+      return (stagingData || []).map(property => ({
+        ...property,
+        alreadyImported: importedExternalIds.has(property.external_id),
+      })) as (StagingProperty & { alreadyImported: boolean })[];
     },
+    staleTime: 10000, // 10 segundos
   });
 }
 
