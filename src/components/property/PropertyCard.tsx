@@ -8,31 +8,97 @@ interface PropertyCardProps {
   index?: number;
 }
 
-// Lista de URLs conhecidas que são placeholders/logos do site original
+// Lista de URLs conhecidas que são placeholders/logos de imobiliárias
 const PLACEHOLDER_PATTERNS = [
+  // Logos do site original
   'leilaoimovel.com.br/imagens/logo',
   'leilaoimovel.com.br/images/logo',
+  'leilaoimovel.com.br/img/logo',
+  // Padrões genéricos de logos
+  '/logo.',
+  '/logo-',
+  '-logo.',
+  '_logo.',
+  'logo_',
+  'logotipo',
+  'logomarca',
+  'marca.',
+  'marca-',
+  'brand.',
+  'brand-',
+  // Imobiliárias conhecidas
+  'caixa-economica',
+  'caixa.gov.br/logo',
+  'cef.gov.br',
+  'imobiliaria',
+  'corretor',
+  'realtor',
+  // Placeholders genéricos
   'sem-foto',
   'no-image',
+  'no_image',
+  'nophoto',
+  'no-photo',
   'placeholder',
   'default-property',
-  '/logo.',
+  'default_property',
+  'default-image',
+  'default_image',
+  'sem-imagem',
+  'sem_imagem',
+  'image-not',
+  'img-default',
+  'foto-indisponivel',
+  // Dimensões muito pequenas (miniaturas de logo)
+  '100x100',
+  '50x50',
+  '32x32',
+  '64x64',
+  // Formatos de ícone
+  'favicon',
+  'icon.',
+  'ico.',
+  // Watermarks e banners
+  'watermark',
+  'banner-',
+  '-banner',
 ];
 
-// Nossa imagem de fallback (logo ou imagem padrão)
+// Lista de dimensões típicas de logos (width x height)
+const LOGO_DIMENSIONS = [
+  { maxWidth: 200, maxHeight: 100 },
+  { maxWidth: 150, maxHeight: 150 },
+];
+
+// Nossa imagem de fallback com marca própria
 const FALLBACK_IMAGE = '/placeholder.svg';
 
-function isPlaceholderImage(imageUrl: string): boolean {
+function isPlaceholderOrLogoImage(imageUrl: string): boolean {
   if (!imageUrl) return true;
+  
   const lowerUrl = imageUrl.toLowerCase();
-  return PLACEHOLDER_PATTERNS.some(pattern => lowerUrl.includes(pattern));
+  
+  // Verifica se a URL contém padrões de logos/placeholders
+  const matchesPattern = PLACEHOLDER_PATTERNS.some(pattern => lowerUrl.includes(pattern));
+  if (matchesPattern) return true;
+  
+  // Verifica se a URL parece ser de um thumbnail muito pequeno
+  const tinyImagePattern = /[_-](\d{2,3})x(\d{2,3})\./;
+  const tinyMatch = lowerUrl.match(tinyImagePattern);
+  if (tinyMatch) {
+    const width = parseInt(tinyMatch[1]);
+    const height = parseInt(tinyMatch[2]);
+    if (width < 200 && height < 200) return true;
+  }
+  
+  return false;
 }
 
 function getPropertyImage(images: string[] | undefined): string {
   if (!images || images.length === 0) return FALLBACK_IMAGE;
   
-  // Procurar a primeira imagem que não seja placeholder
-  const validImage = images.find(img => !isPlaceholderImage(img));
+  // Procurar a primeira imagem que não seja placeholder ou logo
+  const validImage = images.find(img => !isPlaceholderOrLogoImage(img));
   
   return validImage || FALLBACK_IMAGE;
 }

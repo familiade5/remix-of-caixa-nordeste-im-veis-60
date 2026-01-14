@@ -155,6 +155,8 @@ export function useScrapingLogs(configId?: string) {
       if (error) throw error;
       return data as ScrapingLog[];
     },
+    staleTime: 30000, // 30 segundos - evita refetch contínuo
+    refetchInterval: false, // Desabilita refetch automático
   });
 }
 
