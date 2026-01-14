@@ -158,14 +158,22 @@ export function useScrapingLogs(configId?: string) {
   });
 }
 
-// Hook para executar scraping
+// Hook para executar scraping com opções
 export function useRunScraping() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (configId: string) => {
+    mutationFn: async ({ 
+      configId, 
+      states, 
+      manualUrl 
+    }: { 
+      configId: string; 
+      states?: string[];
+      manualUrl?: string;
+    }) => {
       const { data, error } = await supabase.functions.invoke('scrape-caixa', {
-        body: { configId },
+        body: { configId, states, manualUrl },
       });
 
       if (error) throw error;
@@ -230,6 +238,75 @@ export function useIgnoreProperty() {
   });
 }
 
+// Hook para deletar imóvel do staging
+export function useDeleteStagingProperty() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (stagingId: string) => {
+      const { data, error } = await supabase.functions.invoke('manage-staging', {
+        body: { action: 'delete-staging', stagingId },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast.success('Imóvel removido do staging');
+      queryClient.invalidateQueries({ queryKey: ['staging-properties'] });
+    },
+    onError: (error) => {
+      toast.error('Erro ao deletar imóvel: ' + error.message);
+    },
+  });
+}
+
+// Hook para deletar imóvel importado
+export function useDeleteProperty() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (propertyId: string) => {
+      const { data, error } = await supabase.functions.invoke('manage-staging', {
+        body: { action: 'delete-property', propertyId },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast.success('Imóvel deletado com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['db-properties'] });
+    },
+    onError: (error) => {
+      toast.error('Erro ao deletar imóvel: ' + error.message);
+    },
+  });
+}
+
+// Hook para deletar múltiplos imóveis do staging
+export function useBulkDeleteStaging() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (stagingIds: string[]) => {
+      const { data, error } = await supabase.functions.invoke('manage-staging', {
+        body: { action: 'bulk-delete-staging', updates: { stagingIds } },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`${data.deleted} imóveis removidos do staging`);
+      queryClient.invalidateQueries({ queryKey: ['staging-properties'] });
+    },
+    onError: (error) => {
+      toast.error('Erro ao deletar imóveis: ' + error.message);
+    },
+  });
+}
+
 // Hook para atualizar status de propriedade
 export function useUpdatePropertyStatus() {
   const queryClient = useQueryClient();
@@ -280,6 +357,52 @@ export function useBulkImport() {
     },
     onError: (error) => {
       toast.error('Erro na importação em massa: ' + error.message);
+    },
+  });
+}
+
+// Hook para limpar todo o staging
+export function useClearAllStaging() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('manage-staging', {
+        body: { action: 'clear-all-staging' },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`${data.deleted} imóveis removidos do staging`);
+      queryClient.invalidateQueries({ queryKey: ['staging-properties'] });
+    },
+    onError: (error) => {
+      toast.error('Erro ao limpar staging: ' + error.message);
+    },
+  });
+}
+
+// Hook para limpar todas as propriedades importadas
+export function useClearAllProperties() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('manage-staging', {
+        body: { action: 'clear-all-properties' },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`${data.deleted} imóveis deletados`);
+      queryClient.invalidateQueries({ queryKey: ['db-properties'] });
+    },
+    onError: (error) => {
+      toast.error('Erro ao limpar imóveis: ' + error.message);
     },
   });
 }

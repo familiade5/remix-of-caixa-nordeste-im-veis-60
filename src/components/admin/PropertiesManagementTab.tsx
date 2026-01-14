@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useDbProperties, useUpdatePropertyStatus, DbProperty } from '@/hooks/useProperties';
+import { 
+  useDbProperties, 
+  useUpdatePropertyStatus, 
+  useDeleteProperty,
+  useClearAllProperties,
+  DbProperty 
+} from '@/hooks/useProperties';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -31,6 +37,8 @@ import {
   TrendingUp,
   TrendingDown,
   BarChart3,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -45,6 +53,8 @@ const formatPrice = (price: number) => {
 export function PropertiesManagementTab() {
   const { data: properties, isLoading } = useDbProperties();
   const updateStatusMutation = useUpdatePropertyStatus();
+  const deletePropertyMutation = useDeleteProperty();
+  const clearAllPropertiesMutation = useClearAllProperties();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -56,6 +66,16 @@ export function PropertiesManagementTab() {
     property: null,
     action: 'sell',
   });
+
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    property: DbProperty | null;
+  }>({
+    open: false,
+    property: null,
+  });
+
+  const [clearAllDialog, setClearAllDialog] = useState(false);
 
   const filteredProperties = properties?.filter(
     (p) =>
@@ -77,6 +97,28 @@ export function PropertiesManagementTab() {
     }, {
       onSuccess: () => {
         setConfirmDialog({ open: false, property: null, action: 'sell' });
+      },
+    });
+  };
+
+  const handleDelete = (property: DbProperty) => {
+    setDeleteDialog({ open: true, property });
+  };
+
+  const confirmDelete = () => {
+    if (!deleteDialog.property) return;
+
+    deletePropertyMutation.mutate(deleteDialog.property.id, {
+      onSuccess: () => {
+        setDeleteDialog({ open: false, property: null });
+      },
+    });
+  };
+
+  const handleClearAll = () => {
+    clearAllPropertiesMutation.mutate(undefined, {
+      onSuccess: () => {
+        setClearAllDialog(false);
       },
     });
   };
@@ -171,15 +213,28 @@ export function PropertiesManagementTab() {
         </motion.div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por ID, título ou cidade..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 max-w-md"
-        />
+      {/* Search & Actions */}
+      <div className="flex flex-col sm:flex-row gap-4 justify-between">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por ID, título ou cidade..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 max-w-md"
+          />
+        </div>
+        
+        {totalCount > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => setClearAllDialog(true)}
+            className="text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Limpar Todos ({totalCount})
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -264,6 +319,14 @@ export function PropertiesManagementTab() {
                             <Eye className="h-4 w-4" />
                           </Button>
                         </Link>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(property)}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                         {property.status === 'available' ? (
                           <Button
                             variant="outline"
@@ -293,7 +356,7 @@ export function PropertiesManagementTab() {
         </CardContent>
       </Card>
 
-      {/* Confirm Dialog */}
+      {/* Confirm Status Dialog */}
       <Dialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
         <DialogContent>
           <DialogHeader>
@@ -341,6 +404,89 @@ export function PropertiesManagementTab() {
             >
               {updateStatusMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {confirmDialog.action === 'sell' ? 'Confirmar Venda' : 'Reativar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Property Dialog */}
+      <Dialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Deletar Imóvel?
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação irá remover permanentemente este imóvel do sistema. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteDialog.property && (
+            <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+              {deleteDialog.property.images && deleteDialog.property.images.length > 0 && deleteDialog.property.images[0] ? (
+                <img
+                  src={deleteDialog.property.images[0]}
+                  alt={deleteDialog.property.title}
+                  className="w-16 h-16 rounded-lg object-cover"
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80';
+                  }}
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-background flex items-center justify-center">
+                  <Home className="h-8 w-8 text-muted-foreground" />
+                </div>
+              )}
+              <div>
+                <p className="font-medium">{deleteDialog.property.title}</p>
+                <p className="text-sm text-muted-foreground">
+                  {deleteDialog.property.address_city} - {deleteDialog.property.address_state}
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog({ ...deleteDialog, open: false })}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deletePropertyMutation.isPending}
+            >
+              {deletePropertyMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              <Trash2 className="h-4 w-4 mr-2" />
+              Deletar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear All Dialog */}
+      <Dialog open={clearAllDialog} onOpenChange={setClearAllDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Limpar Todos os Imóveis?
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação irá remover permanentemente todos os {totalCount} imóveis importados do sistema. 
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearAllDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleClearAll}
+              disabled={clearAllPropertiesMutation.isPending}
+            >
+              {clearAllPropertiesMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              <Trash2 className="h-4 w-4 mr-2" />
+              Limpar Todos ({totalCount})
             </Button>
           </DialogFooter>
         </DialogContent>

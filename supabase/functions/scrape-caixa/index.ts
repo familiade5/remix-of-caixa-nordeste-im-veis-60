@@ -5,13 +5,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Estados do Nordeste com suas principais cidades (maior volume de imóveis)
+// Estados do Nordeste com suas principais cidades
 const NORTHEAST_LOCATIONS = [
   // Ceará
   { uf: 'CE', city: 'fortaleza', cityName: 'Fortaleza' },
   { uf: 'CE', city: 'caucaia', cityName: 'Caucaia' },
   { uf: 'CE', city: 'maracanau', cityName: 'Maracanaú' },
   { uf: 'CE', city: 'juazeiro-do-norte', cityName: 'Juazeiro do Norte' },
+  { uf: 'CE', city: 'sobral', cityName: 'Sobral' },
   // Bahia
   { uf: 'BA', city: 'salvador', cityName: 'Salvador' },
   { uf: 'BA', city: 'feira-de-santana', cityName: 'Feira de Santana' },
@@ -98,7 +99,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { configId } = await req.json();
+    const { configId, states, manualUrl } = await req.json();
 
     // Buscar configuração de scraping
     const { data: config, error: configError } = await supabase
@@ -131,14 +132,75 @@ Deno.serve(async (req) => {
       console.error('Log creation error:', logError);
     }
 
-    console.log('🚀 Iniciando scraping COMPLETO - leilaoimovel.com.br');
+    // Se tem URL manual, buscar dessa URL específica
+    if (manualUrl) {
+      console.log('🔗 Buscando imóveis da URL manual:', manualUrl);
+      
+      try {
+        const result = await scrapeManualUrl(manualUrl, firecrawlApiKey, supabase);
+        
+        // Atualizar log
+        if (logEntry) {
+          await supabase
+            .from('scraping_logs')
+            .update({
+              status: 'completed',
+              finished_at: new Date().toISOString(),
+              properties_found: result.found,
+              properties_new: result.new,
+            })
+            .eq('id', logEntry.id);
+        }
+
+        await supabase
+          .from('scraping_config')
+          .update({ last_run_at: new Date().toISOString() })
+          .eq('id', configId);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            propertiesFound: result.found,
+            propertiesNew: result.new,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (err) {
+        console.error('Erro no scraping manual:', err);
+        
+        if (logEntry) {
+          await supabase
+            .from('scraping_logs')
+            .update({
+              status: 'error',
+              finished_at: new Date().toISOString(),
+              error_message: err instanceof Error ? err.message : 'Unknown error',
+            })
+            .eq('id', logEntry.id);
+        }
+
+        return new Response(
+          JSON.stringify({ success: false, error: err instanceof Error ? err.message : 'Erro no scraping' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    console.log('🚀 Iniciando scraping automático - leilaoimovel.com.br');
 
     const allPropertyLinks: PropertyLink[] = [];
     const seenPropertyIds = new Set<string>();
     
-    // Filtrar estados do config
-    const configStates = config.states?.map((s: string) => s.toUpperCase()) || ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'];
-    const locationsToScrape = NORTHEAST_LOCATIONS.filter(loc => configStates.includes(loc.uf));
+    // Filtrar estados - priorizar parâmetro states, depois config
+    let filterStates: string[] = [];
+    if (states && states.length > 0) {
+      filterStates = states.map((s: string) => s.toUpperCase());
+      console.log(`📍 Filtrando por estados selecionados: ${filterStates.join(', ')}`);
+    } else {
+      filterStates = config.states?.map((s: string) => s.toUpperCase()) || ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'];
+    }
+    
+    const locationsToScrape = NORTHEAST_LOCATIONS.filter(loc => filterStates.includes(loc.uf));
     
     console.log(`📍 Fase 1: Coletando links de ${locationsToScrape.length} cidades`);
     
@@ -147,7 +209,7 @@ Deno.serve(async (req) => {
       console.log(`\n🔍 Coletando links em ${location.cityName}/${location.uf}...`);
       
       let currentPage = 1;
-      const maxPages = 30; // Aumentado para cobrir todas as páginas
+      const maxPages = 30;
       let hasMorePages = true;
       
       while (hasMorePages && currentPage <= maxPages) {
@@ -255,7 +317,7 @@ Deno.serve(async (req) => {
     console.log(`\n🔎 Fase 2: Buscando detalhes completos...`);
     
     let propertiesNew = 0;
-    const batchSize = 5; // Processar 5 por vez para evitar rate limit
+    const batchSize = 5;
     
     for (let i = 0; i < newPropertyLinks.length; i += batchSize) {
       const batch = newPropertyLinks.slice(i, i + batchSize);
@@ -380,6 +442,165 @@ Deno.serve(async (req) => {
   }
 });
 
+// Função para scraping de URL manual
+async function scrapeManualUrl(url: string, apiKey: string, supabase: any): Promise<{ found: number; new: number }> {
+  console.log('Scraping URL manual:', url);
+  
+  const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      url,
+      formats: ['html'],
+      waitFor: 3000,
+      onlyMainContent: false,
+    }),
+  });
+
+  if (!scrapeResponse.ok) {
+    throw new Error(`Erro ao acessar URL: ${scrapeResponse.status}`);
+  }
+
+  const scrapeData = await scrapeResponse.json();
+  const html = scrapeData.data?.html || scrapeData.html || '';
+  
+  // Tentar extrair links de listagem primeiro
+  const propertyLinks = extractPropertyLinks(html, '', '');
+  
+  if (propertyLinks.length > 0) {
+    console.log(`Encontrados ${propertyLinks.length} links de imóveis`);
+    
+    // Buscar IDs existentes
+    const existingIds = new Set<string>();
+    const { data: existingStaging } = await supabase.from('staging_properties').select('external_id');
+    existingStaging?.forEach((p: any) => existingIds.add(p.external_id));
+    const { data: existingProps } = await supabase.from('properties').select('external_id');
+    existingProps?.forEach((p: any) => { if (p.external_id) existingIds.add(p.external_id); });
+    
+    const newLinks = propertyLinks.filter(l => !existingIds.has(l.id));
+    let inserted = 0;
+    
+    // Processar cada link
+    for (const link of newLinks.slice(0, 50)) { // Limitar a 50 por vez
+      try {
+        const detailResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url: link.url,
+            formats: ['html'],
+            waitFor: 2000,
+          }),
+        });
+
+        if (detailResponse.ok) {
+          const detailData = await detailResponse.json();
+          const detailHtml = detailData.data?.html || detailData.html || '';
+          const property = extractPropertyDetails(detailHtml, link);
+          
+          if (property) {
+            const { error } = await supabase.from('staging_properties').insert({
+              external_id: property.id,
+              raw_data: property,
+              title: property.title,
+              type: property.type,
+              price: property.price,
+              original_price: property.originalPrice,
+              discount: property.discount,
+              address_neighborhood: property.neighborhood,
+              address_city: property.city,
+              address_state: property.state,
+              bedrooms: property.bedrooms,
+              bathrooms: property.bathrooms,
+              area: property.area || property.areaTerreno || 0,
+              parking_spaces: property.parkingSpaces,
+              images: property.images,
+              description: property.description,
+              accepts_fgts: property.acceptsFgts,
+              accepts_financing: property.acceptsFinancing,
+              modality: property.modality,
+              caixa_link: property.caixaLink,
+              auction_date: property.auctionDate,
+              status: 'pending',
+            });
+            
+            if (!error) inserted++;
+          }
+        }
+        
+        await new Promise(r => setTimeout(r, 300));
+      } catch (e) {
+        console.error('Erro ao processar link:', e);
+      }
+    }
+    
+    return { found: propertyLinks.length, new: inserted };
+  }
+  
+  // Se não encontrou links, tentar extrair como página de imóvel único
+  console.log('Tentando extrair como imóvel único...');
+  
+  // Gerar ID do URL
+  const idMatch = url.match(/-(\d{6,})-(\d+)-/);
+  const id = idMatch ? `${idMatch[1]}-${idMatch[2]}` : `manual-${Date.now()}`;
+  
+  // Extrair estado e cidade do URL se possível
+  const locationMatch = url.match(/em-([^-]+)-([a-z]{2})/i);
+  const city = locationMatch ? locationMatch[1].replace(/-/g, ' ') : '';
+  const state = locationMatch ? locationMatch[2].toUpperCase() : '';
+  
+  const property = extractPropertyDetails(html, { url, id, city, state });
+  
+  if (property && property.price > 0) {
+    // Verificar se já existe
+    const { data: existing } = await supabase
+      .from('staging_properties')
+      .select('id')
+      .eq('external_id', property.id);
+    
+    if (!existing || existing.length === 0) {
+      const { error } = await supabase.from('staging_properties').insert({
+        external_id: property.id,
+        raw_data: property,
+        title: property.title,
+        type: property.type,
+        price: property.price,
+        original_price: property.originalPrice,
+        discount: property.discount,
+        address_neighborhood: property.neighborhood,
+        address_city: property.city,
+        address_state: property.state,
+        bedrooms: property.bedrooms,
+        bathrooms: property.bathrooms,
+        area: property.area || property.areaTerreno || 0,
+        parking_spaces: property.parkingSpaces,
+        images: property.images,
+        description: property.description,
+        accepts_fgts: property.acceptsFgts,
+        accepts_financing: property.acceptsFinancing,
+        modality: property.modality,
+        caixa_link: property.caixaLink,
+        auction_date: property.auctionDate,
+        status: 'pending',
+      });
+      
+      if (!error) {
+        return { found: 1, new: 1 };
+      }
+    }
+    
+    return { found: 1, new: 0 };
+  }
+  
+  return { found: 0, new: 0 };
+}
+
 function extractPropertyLinks(html: string, stateUf: string, cityName: string): PropertyLink[] {
   const links: PropertyLink[] = [];
   
@@ -394,12 +615,24 @@ function extractPropertyLinks(html: string, stateUf: string, cityName: string): 
     const idMatch = url.match(/-(\d{6,})-(\d+)-/);
     const id = idMatch ? `${idMatch[1]}-${idMatch[2]}` : null;
     
+    // Tentar extrair cidade/estado do URL se não fornecidos
+    let city = cityName;
+    let state = stateUf;
+    
+    if (!city || !state) {
+      const locationMatch = url.match(/em-([^-]+)-([a-z]{2})/i);
+      if (locationMatch) {
+        city = city || locationMatch[1].replace(/-/g, ' ');
+        state = state || locationMatch[2].toUpperCase();
+      }
+    }
+    
     if (id && !links.some(l => l.id === id)) {
       links.push({
         url,
         id,
-        city: cityName,
-        state: stateUf,
+        city,
+        state,
       });
     }
   }
@@ -450,7 +683,7 @@ function extractPropertyDetails(html: string, link: PropertyLink): CaixaProperty
       }
     }
     
-    if (price === 0) return null; // Pular se não tem preço
+    if (price === 0) return null;
     
     // === DESCONTO ===
     let discount = 0;
